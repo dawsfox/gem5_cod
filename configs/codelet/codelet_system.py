@@ -1,0 +1,150 @@
+# -*- coding: utf-8 -*-
+# Copyright (c) 2017 Jason Lowe-Power
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met: redistributions of source code must retain the above copyright
+# notice, this list of conditions and the following disclaimer;
+# redistributions in binary form must reproduce the above copyright
+# notice, this list of conditions and the following disclaimer in the
+# documentation and/or other materials provided with the distribution;
+# neither the name of the copyright holders nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+""" This file creates a barebones system and executes 'hello', a simple Hello
+World application. Adds a simple cache between the CPU and the membus.
+
+This config file assumes that the x86 ISA was built.
+"""
+
+# import the m5 (gem5) library created when gem5 is built
+import m5
+
+# import all of the SimObjects
+from m5.objects import *
+
+# create the system we are going to simulate
+system = System()
+
+# Set the clock frequency of the system (and all of its children)
+system.clk_domain = SrcClockDomain()
+system.clk_domain.clock = "1GHz"
+system.clk_domain.voltage_domain = VoltageDomain()
+
+# Set up the system
+system.mem_mode = "timing"  # Use timing accesses
+system.mem_ranges = [AddrRange("512MB")]  # Create an address range
+
+# Create a simple CPU
+system.cpu = X86TimingSimpleCPU()
+
+# Create Codelet Interface for the CPU
+system.codelet_interface = CodeletInterface()
+system.codelet_interface.queue_range = AddrRange(start = Addr(0x200000000), 
+                                                 end = Addr(0x200000000)
+                                                 + 0x3FFFFF) #random number to start with; should be changed to go off of size
+# Create SU
+system.su = SU()
+# Arbitrary starting address for SU local storage; can change later
+system.su.su_range = AddrRange(start = Addr(0x200000000),
+                                end = Addr(0x200000000)
+                                + 0x3FFF) #random number to start with; roughly 16kB
+
+# Create a memory bus, a coherent crossbar, in this case
+system.membus = SystemXBar()
+# Create noncoherent xbar between Codelet Interfaces and SU (and MCU later)
+system.codbus = NoncoherentXBar()
+system.codbus.forward_latency = 0 #placeholder
+system.codbus.frontend_latency = 0 #placeholder
+system.codbus.response_latency = 0 #placeholder
+system.codbus.width = 64 #placeholder
+
+# Create a simple cache
+#system.cache = SimpleCache(size="1kB")
+
+# Connect the I and D cache ports of the CPU to the memobj.
+# Since cpu_side is a vector port, each time one of these is connected, it will
+# create a new instance of the CPUSidePort class
+#system.cpu.icache_port = system.cache.cpu_side
+#system.cpu.dcache_port = system.cache.cpu_side
+
+# CPU ports go through Codelet interface
+system.cpu.icache_port = system.codelet_interface.cpu_side_ports
+system.cpu.dcache_port = system.codelet_interface.cpu_side_ports
+
+# Forwarding mem requests through Codelet Interface to the membus (or to caches first later)
+system.codelet_interface.mem_side_port = system.membus.cpu_side_ports
+
+# "Codelet side port" is a port that connects through the noncoherent Codelet bus instead of membus
+# Connecting Codelet side ports between Codelet Interface and codelet bus -- do the request ports really need to be separate?
+system.codelet_interface.cod_side_req_ports = system.codbus.cpu_side_ports # For retiring Codelets 
+system.codelet_interface.cod_side_req_ports = system.codbus.cpu_side_ports # For signaling dependencies
+
+# Connect Codelet response port to codelet bus -- called mem_side b/c it's a request port, practically it's on the CPU side
+system.codelet_interface.cod_side_resp_port = system.codbus.mem_side_ports # For SU pushing Codelets to CU
+
+# Connect SU ports to the codelet bus
+system.su.cod_side_resp_ports = system.codbus.mem_side_ports
+system.su.cod_side_resp_ports = system.codbus.mem_side_ports
+
+# SU connects its request port to the codelet bus' cpu-side port (because it must connect to a response port) though it is physically not cpu-side
+system.su.cod_side_req_port = system.codbus.cpu_side_ports
+
+
+
+# Hook the cache up to the memory bus
+#system.cache.mem_side = system.membus.cpu_side_ports
+
+# create the interrupt controller for the CPU and connect to the membus
+system.cpu.createInterruptController()
+system.cpu.interrupts[0].pio = system.membus.mem_side_ports
+system.cpu.interrupts[0].int_requestor = system.membus.cpu_side_ports
+system.cpu.interrupts[0].int_responder = system.membus.mem_side_ports
+
+# Create a DDR3 memory controller and connect it to the membus
+system.mem_ctrl = MemCtrl()
+system.mem_ctrl.dram = DDR3_1600_8x8()
+system.mem_ctrl.dram.range = system.mem_ranges[0]
+system.mem_ctrl.port = system.membus.mem_side_ports
+
+# Connect the system up to the membus
+system.system_port = system.membus.cpu_side_ports
+
+# Create a process for a simple "Hello World" application
+process = Process()
+# Set the command
+# grab the specific path to the binary
+thispath = os.path.dirname(os.path.realpath(__file__))
+binpath = os.path.join(
+    thispath, "../../", "tests/test-progs/hello/bin/x86/linux/hello"
+)
+# cmd is a list which begins with the executable (like argv)
+process.cmd = [binpath]
+# Set the cpu to use the process as its workload and create thread contexts
+system.cpu.workload = process
+system.cpu.createThreads()
+
+system.workload = SEWorkload.init_compatible(binpath)
+
+# set up the root SimObject and start the simulation
+root = Root(full_system=False, system=system)
+# instantiate all of the objects we've created above
+m5.instantiate()
+
+print("Beginning simulation!")
+exit_event = m5.simulate()
+print("Exiting @ tick %i because %s" % (m5.curTick(), exit_event.getCause()))

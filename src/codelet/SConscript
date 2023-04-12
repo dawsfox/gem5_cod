@@ -1,0 +1,11 @@
+Import('*')
+
+
+SimObject('CodeletInterface.py', sim_objects=['CodeletInterface'])
+SimObject('SU.py', sim_objects=['SU'])
+
+Source('codelet_interface.cc')
+Source('su.cc')
+
+DebugFlag('CodeletInterface')
+DebugFlag('SU')
