@@ -27,7 +27,9 @@ void pushCod(System *system, std::queue<codelet_t> *codQueue)
         // if sym found            
         DPRINTF(CodeletInterfaceQueue, "symbol found: %lx\n", sym_it->address);
         codelet_t testCod = {(fire_t)sym_it->address, (unsigned) 1};
-        codQueue->push(testCod);
+        for (int i=0; i<30; i++) {
+            codQueue->push(testCod);
+        }
     } else {
         DPRINTF(CodeletInterfaceQueue, "symbol not found :(\n");
         DPRINTF(CodeletInterfaceQueue, "searched for %s : not found", test_fire);
@@ -196,10 +198,16 @@ CodeletInterface::accessFunctional(PacketPtr pkt)
         codQueue.pop(); // remove it from the queue
         // how to put it in a packet?
         pkt->makeResponse();
-        pkt->setSize(sizeof(codelet_t));
+        auto data = pkt->getPtr<uint8_t>();
+        //auto size = pkt->getSize();
+        std::memcpy(data, &(toPop.fire), sizeof(fire_t));
+        //pkt->setSize(sizeof(codelet_t));
+        //pkt->setSize(sizeof(fire_t));
         // no byte swapping, set new data
-        DPRINTF(CodeletInterfaceQueue, "popping Codelet from queue to send");
-        pkt->dataStatic<codelet_t>(&toPop);
+        DPRINTF(CodeletInterfaceQueue, "popping Codelet from queue to send\n");
+        //pkt->dataStatic<codelet_t>(&toPop);
+        //pkt->dataStatic<fire_t>(&(toPop.fire));
+        //pkt->dataDynamic<fire_t>(&(toPop.fire));
         return(true);
     }
     else {
@@ -224,6 +232,10 @@ CodeletInterface::accessTiming(PacketPtr pkt)
         pkt->dataStatic<Codelet>(&nullCod);
         */
         // send response without changing; runtime should catch size isn't large enough to be a codelet
+        pkt->makeResponse();
+        auto data = pkt->getPtr<uint8_t>();
+        auto size = pkt->getSize();
+        std::fill(data, data + size, 0); //send nullptr basically
         sendResponse(pkt);
     }
 }

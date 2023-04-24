@@ -55,14 +55,14 @@ system.cpu = X86TimingSimpleCPU()
 
 # Create Codelet Interface for the CPU
 system.codelet_interface = CodeletInterface()
-system.codelet_interface.queue_range = AddrRange(start = Addr(0x900000000), 
-                                                 end = Addr(0x900000000)
+system.codelet_interface.queue_range = AddrRange(start = Addr(0x90000000), 
+                                                 end = Addr(0x90000000)
                                                  + 0xf) #range should be size of codelet_t...
 # Create SU
 system.su = SU()
 # Arbitrary starting address for SU local storage; can change later
-system.su.su_range = AddrRange(start = Addr(0x90000000f),
-                                end = Addr(0x90000000f)
+system.su.su_range = AddrRange(start = Addr(0x9000000f),
+                                end = Addr(0x9000000f)
                                 + 0x88) #random number to start with; roughly 16kB
 
 # Create a memory bus, a coherent crossbar, in this case
