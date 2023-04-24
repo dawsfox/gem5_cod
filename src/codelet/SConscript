@@ -8,4 +8,5 @@ Source('codelet_interface.cc')
 Source('su.cc')
 
 DebugFlag('CodeletInterface')
+DebugFlag('CodeletInterfaceQueue')
 DebugFlag('SU')

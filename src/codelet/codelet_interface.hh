@@ -315,7 +315,7 @@ class CodeletInterface : public ClockedObject
 
     /// FIFO Codelet queue
     // where will we define the codelet class?
-    std::queue<Codelet> codQueue;
+    std::queue<codelet_t> codQueue;
 
     /// CodeletInterface statistics
   protected:

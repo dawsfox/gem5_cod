@@ -47,22 +47,23 @@ system.clk_domain.voltage_domain = VoltageDomain()
 
 # Set up the system
 system.mem_mode = "timing"  # Use timing accesses
-system.mem_ranges = [AddrRange("512MB")]  # Create an address range
+#system.mem_ranges = [AddrRange("512MB")]  # Create an address range
+system.mem_ranges = [AddrRange("8192MB")]  # Create an address range
 
 # Create a simple CPU
 system.cpu = X86TimingSimpleCPU()
 
 # Create Codelet Interface for the CPU
 system.codelet_interface = CodeletInterface()
-system.codelet_interface.queue_range = AddrRange(start = Addr(0x200000000), 
-                                                 end = Addr(0x200000000)
-                                                 + 0x3FFFFF) #random number to start with; should be changed to go off of size
+system.codelet_interface.queue_range = AddrRange(start = Addr(0x900000000), 
+                                                 end = Addr(0x900000000)
+                                                 + 0xf) #range should be size of codelet_t...
 # Create SU
 system.su = SU()
 # Arbitrary starting address for SU local storage; can change later
-system.su.su_range = AddrRange(start = Addr(0x200000000),
-                                end = Addr(0x200000000)
-                                + 0x3FFF) #random number to start with; roughly 16kB
+system.su.su_range = AddrRange(start = Addr(0x90000000f),
+                                end = Addr(0x90000000f)
+                                + 0x88) #random number to start with; roughly 16kB
 
 # Create a memory bus, a coherent crossbar, in this case
 system.membus = SystemXBar()
@@ -130,7 +131,8 @@ process = Process()
 # grab the specific path to the binary
 thispath = os.path.dirname(os.path.realpath(__file__))
 binpath = os.path.join(
-    thispath, "../../", "tests/test-progs/hello/bin/x86/linux/hello"
+    #thispath, "../../", "tests/test-progs/hello/bin/x86/linux/hello"
+    thispath, "../../", "tests/test-progs/codelet/bin/cod_test"
 )
 # cmd is a list which begins with the executable (like argv)
 process.cmd = [binpath]
@@ -140,10 +142,17 @@ system.cpu.createThreads()
 
 system.workload = SEWorkload.init_compatible(binpath)
 
+
 # set up the root SimObject and start the simulation
 root = Root(full_system=False, system=system)
+
 # instantiate all of the objects we've created above
 m5.instantiate()
+
+process.map(Addr(0x90000000),
+            Addr(0x90000000),
+            0x40000000,
+            False)
 
 print("Beginning simulation!")
 exit_event = m5.simulate()

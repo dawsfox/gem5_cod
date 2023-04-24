@@ -1,14 +1,13 @@
 #ifndef __CODELET_CODELET_HH__
 #define __CODELET_CODELET_HH__
 
-namespace gem5
-{
-    /*
+/*
 class Codelet 
 {
     private:
         unsigned id;
     public:
+        // replace virtual function w/ function pointer
         virtual void fire();
         Codelet(unsigned id) :
             id(id)
@@ -16,7 +15,7 @@ class Codelet
 
 }; //class Codelet
 */
-
+// typedef for fire function (function pointer)
 typedef void (*fire_t)();
 
 typedef struct codelet_s {
@@ -25,7 +24,7 @@ typedef struct codelet_s {
     unsigned id;
 } codelet_t;
 
-
-} // namespace gem5
+// define a tester function here
+void helloCodFire();
 
 #endif

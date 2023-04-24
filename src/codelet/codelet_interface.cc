@@ -1,15 +1,38 @@
 
 #include "codelet/codelet_interface.hh"
-
+#include "codelet/codelet.hh"
 //#include "base/compiler.hh"
 //#include "base/random.hh"
 #include "debug/CodeletInterface.hh"
+#include "debug/CodeletInterfaceQueue.hh"
 #include "sim/system.hh"
+#include "base/loader/symtab.hh"
+#include "sim/process.hh"
 
 namespace gem5
 {
-void hello() {
-    DPRINTF(CodeletInterface, "Hi! helloCod must be executing...\n");
+
+// let's hardcode some function names here;
+//_Z12helloCodFirev (from nm)
+//std::string test_fire = "helloCodFire";
+std::string test_fire = "_Z12helloCodFirev";
+
+void pushCod(System *system, std::queue<codelet_t> *codQueue)
+{
+    ThreadContext *tmp_context = system->threads[0];
+    loader::ObjectFile *tmp_obj = tmp_context->getProcessPtr()->objFile;
+    loader::SymbolTable tmp_sym = tmp_obj->symtab();
+    auto sym_it = tmp_sym.find(test_fire);
+    if (sym_it != tmp_sym.end()) {
+        // if sym found            
+        DPRINTF(CodeletInterfaceQueue, "symbol found: %lx\n", sym_it->address);
+        codelet_t testCod = {(fire_t)sym_it->address, (unsigned) 1};
+        codQueue->push(testCod);
+    } else {
+        DPRINTF(CodeletInterfaceQueue, "symbol not found :(\n");
+        DPRINTF(CodeletInterfaceQueue, "searched for %s : not found", test_fire);
+    }
+
 }
 
 #define CODELET_SIZE 32 //just a placeholder value...
@@ -34,10 +57,44 @@ CodeletInterface::CodeletInterface(const CodeletInterfaceParams &params) :
         // cod req ports here. and lets hope i got the name of the param right??
         codReqPorts.emplace_back(name() + csprintf(".cod_side_req_ports[%d]", i), i, this);
     }
-    for (int i = 0; i<5; i++) {
-        Codelet helloCod((void *)hello, 0);
-        codQueue.push(helloCod);
-    }
+    //for (int i = 0; i<5; i++) {
+        // early step: hard code here the codelet names to look for in the section....
+        // later the SU should do this
+        // symbol to find is defined in codelet.hh
+        /*
+        ThreadContext *tmp_context = params.system->threads[0];
+        loader::ObjectFile *tmp_obj = tmp_context->getProcessPtr()->objFile;
+        loader::SymbolTable tmp_sym = tmp_obj->symtab();
+        auto sym_it = tmp_sym.find(test_fire);
+        if (sym_it != tmp_sym.end()) {
+            // if sym found            
+        */
+        // dumb workaround because of how lambdas work
+        std::queue<codelet_t> * tmpQPtr = &codQueue;
+            DPRINTF(CodeletInterfaceQueue, "symbol not found :(\n");
+            schedule(new EventFunctionWrapper([this, params, tmpQPtr]{ pushCod(params.system, tmpQPtr); },
+                                      name() + ".pushEvent", true),
+                    clockEdge(queueLatency));
+        /*
+            DPRINTF(CodeletInterface, "symbol found: %lx\n", sym_it->address);
+            codelet_t testCod = {(fire_t)sym_it->address, (unsigned) 1};
+            codQueue.push(testCod);
+        } else {
+            DPRINTF(CodeletInterface, "symbol not found :(\n");
+        }
+        */
+        /*
+        auto symbol_it = table.find(test_func);
+        if (symbol_it != table.end()) {
+            DPRINTF(CodeletInterface, "symbol found: %lx\n", symbol_it->second);
+            codelet_t testCod = {(fire_t)symbol_it->second, (unsigned) 0};
+            codQueue.push(testCod);
+        } else {
+            DPRINTF(CodeletInterface, "symbol not found :(\n");
+        }*/
+
+
+    //} //for
 }
 
 Port &
@@ -111,11 +168,13 @@ CodeletInterface::handleFunctional(PacketPtr pkt)
         else {
             // big question: what to do if the codelet pop fails? introduce a NullCodelet??
             // ignore for now....
-            Codelet nullCod(nullptr, 0);
+            /*
+            NullCod nullCod(0);
             pkt->makeResponse();
             pkt->setSize(sizeof(Codelet));
             // no byte swapping, set null data (should be caught in CPU runtime)
             pkt->dataStatic<Codelet>(&nullCod);
+            */
             sendResponse(pkt);
         }
     }
@@ -133,13 +192,14 @@ CodeletInterface::accessFunctional(PacketPtr pkt)
     panic_if(!pkt->isRead(), "CPU should not do anything to queue space but read it");
     // pop codelet and return
     if (!codQueue.empty()) {
-        Codelet toPop = codQueue.front(); //get next Codelet up
+        codelet_t toPop = codQueue.front(); //get next Codelet up
         codQueue.pop(); // remove it from the queue
         // how to put it in a packet?
         pkt->makeResponse();
-        pkt->setSize(sizeof(Codelet));
+        pkt->setSize(sizeof(codelet_t));
         // no byte swapping, set new data
-        pkt->dataStatic<Codelet>(&toPop);
+        DPRINTF(CodeletInterfaceQueue, "popping Codelet from queue to send");
+        pkt->dataStatic<codelet_t>(&toPop);
         return(true);
     }
     else {
@@ -156,11 +216,14 @@ CodeletInterface::accessTiming(PacketPtr pkt)
         // managed to actually pop a codelet and modify packet
         sendResponse(pkt); // send back to CPU 
     } else {
-        Codelet nullCod(nullptr, 0);
+        /*
+        NullCod nullCod(0);
         pkt->makeResponse();
         pkt->setSize(sizeof(Codelet));
         // no byte swapping, set null data (should be caught in CPU runtime)
         pkt->dataStatic<Codelet>(&nullCod);
+        */
+        // send response without changing; runtime should catch size isn't large enough to be a codelet
         sendResponse(pkt);
     }
 }
