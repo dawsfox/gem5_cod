@@ -125,6 +125,8 @@ class ElfObject : public ObjectFile
     Addr programHeaderTable() {return _programHeaderTable;}
     uint16_t programHeaderSize() {return _programHeaderSize;}
     uint16_t programHeaderCount() {return _programHeaderCount;}
+
+    Elf * getElf() {return elf;}
 };
 
 /**
