@@ -12,7 +12,9 @@ class SU(ClockedObject):
     cod_side_req_port =  RequestPort("Request port for pushing Codelets to CUs")
 
 
-    su_range = Param.AddrRange("Address range used by SU")
+    su_sig_range = Param.AddrRange("Address range used by SU for dependency signalling")
+    su_ret_range = Param.AddrRange("Address range used by SU for codelet retirement")
+
     sig_latency = Param.Cycles(1, "Cycles delayed for signaling syncSlots")
     size = Param.MemorySize("16kB", "SyncSlot storage size")
     system = Param.System(Parent.any, "The system the interface is part of")

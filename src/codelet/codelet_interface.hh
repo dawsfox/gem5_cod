@@ -155,7 +155,7 @@ class CodeletInterface : public ClockedObject
             blockedPacket(nullptr)
         { }
 
-        void sendPacket(PacketPtr pkt) {}
+        void sendPacket(PacketPtr pkt);
 
         /**
          * Get a list of the non-overlapping address ranges the owner is
@@ -166,13 +166,13 @@ class CodeletInterface : public ClockedObject
          */
         AddrRangeList getAddrRanges() const override;
 
-        void trySendRetry() {}
+        void trySendRetry();
 
       protected:
         Tick recvAtomic(PacketPtr pkt) override
         { panic("recvAtomic unimpl."); }
 
-        void recvFunctional(PacketPtr pkt) override {}
+        void recvFunctional(PacketPtr pkt) override;
 
         /**
          * Receive a timing request from the request port.
@@ -182,14 +182,14 @@ class CodeletInterface : public ClockedObject
          *         will call sendRetry() when we can try to receive this
          *         request again.
          */
-        bool recvTimingReq(PacketPtr pkt) override {return false;}
+        bool recvTimingReq(PacketPtr pkt) override;
 
         /**
          * Called by the request port if sendTimingResp was called on this
          * response port (causing recvTimingResp to be called on the request
          * port) and was unsuccessful.
          */
-        void recvRespRetry() override {}
+        void recvRespRetry() override;
     }; // class CodSideRespPort
 
     /**
@@ -279,6 +279,8 @@ class CodeletInterface : public ClockedObject
     // SU is teling us to get mem ranges again?
     void sendCodRangeChange() const;
 
+    void init() override;
+
     /// Latency to read or pop from the codelet queue
     const Cycles queueLatency;
 
@@ -314,7 +316,6 @@ class CodeletInterface : public ClockedObject
     Tick missTime;
 
     /// FIFO Codelet queue
-    // where will we define the codelet class?
     std::queue<codelet_t> codQueue;
 
     /// CodeletInterface statistics

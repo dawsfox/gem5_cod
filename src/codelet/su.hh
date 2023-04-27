@@ -5,6 +5,8 @@
 #include "mem/port.hh"
 #include "params/SU.hh"
 #include "sim/clocked_object.hh"
+#include "codelet/codelet.hh"
+#include <queue>
 
 namespace gem5
 {
@@ -24,17 +26,17 @@ class SU : public ClockedObject
             RequestPort(name, owner), owner(owner), blockedPacket(nullptr)
         { }
 
-        void sendPacket(PacketPtr pkt) {}
+        void sendPacket(PacketPtr pkt);
 
       protected:
-        bool recvTimingResp(PacketPtr pkt) override {return false;}
+        bool recvTimingResp(PacketPtr pkt) override;
 
         /**
          * Called by the response port if sendTimingReq was called on this
          * request port (causing recvTimingReq to be called on the response
          * port) and was unsuccesful.
          */
-        void recvReqRetry() override {}
+        void recvReqRetry() override;
 
         /**
          * Called to receive an address range change from the peer response
@@ -61,10 +63,10 @@ class SU : public ClockedObject
       public:
         CodSideRespPort(const std::string& name, int id, SU *owner) :
             ResponsePort(name, owner), id(id), owner(owner), needRetry(false),
-            blockedPacket(nullptr), suRange(owner->suRange)
+            blockedPacket(nullptr), suRange((id==0) ? owner->suSigRange : owner->suRetRange)
         { }
 
-        void sendPacket(PacketPtr pkt) {}
+        void sendPacket(PacketPtr pkt);
 
         /**
          * Get a list of the non-overlapping address ranges the owner is
@@ -75,13 +77,13 @@ class SU : public ClockedObject
          */
         AddrRangeList getAddrRanges() const override; 
 
-        void trySendRetry() {}
+        void trySendRetry();
 
       protected:
         Tick recvAtomic(PacketPtr pkt) override
         { panic("recvAtomic unimpl."); }
 
-        void recvFunctional(PacketPtr pkt) override {}
+        void recvFunctional(PacketPtr pkt) override;
 
         /**
          * Receive a timing request from the request port.
@@ -98,7 +100,7 @@ class SU : public ClockedObject
          * response port (causing recvTimingResp to be called on the request
          * port) and was unsuccessful.
          */
-        void recvRespRetry() override {}
+        void recvRespRetry() override;
     }; // class CodSideRespPort
 
     /**
@@ -110,17 +112,17 @@ class SU : public ClockedObject
      * @return true if we can handle the request this cycle, false if the
      *         requestor needs to retry later
      */
-    bool handleRequest(PacketPtr pkt, int port_id) {return false;}
+    bool handleRequest(PacketPtr pkt, int port_id);
 
     /**
-     * Handle the respone from the memory side. Called from the memory port
+     * Handle the respone from the memory side. Called from the cod resp port
      * on a timing response.
      *
      * @param responding packet
      * @return true if we can handle the response this cycle, false if the
      *         responder needs to retry later
      */
-    bool handleResponse(PacketPtr pkt) {return false;}
+    bool handleResponse(PacketPtr pkt);
 
     /**
      * Send the packet to the CPU side.
@@ -130,7 +132,7 @@ class SU : public ClockedObject
      *
      * @param the packet to send to the cpu side
      */
-    void sendResponse(PacketPtr pkt) {}
+    void sendResponse(PacketPtr pkt);
 
     /**
      * Handle a packet functionally. Update the data on a write and get the
@@ -138,13 +140,13 @@ class SU : public ClockedObject
      *
      * @param packet to functionally handle
      */
-    void handleFunctional(PacketPtr pkt) {}
+    void handleFunctional(PacketPtr pkt);
 
     /**
      * Access the cache for a timing access. This is called after the cache
      * access latency has already elapsed.
      */
-    void accessTiming(PacketPtr pkt) {}
+    void accessTiming(PacketPtr pkt);
 
     /**
      * This is where we actually update / read from the cache. This function
@@ -152,15 +154,10 @@ class SU : public ClockedObject
      *
      * @return true if a hit, false otherwise
      */
-    bool accessFunctional(PacketPtr pkt) {return false;}
+    bool accessFunctional(PacketPtr pkt);
 
-    /**
-     * Insert a block into the cache. If there is no room left in the cache,
-     * then this function evicts a random entry t make room for the new block.
-     *
-     * @param packet with the data (and address) to insert into the cache
-     */
-    void insert(PacketPtr pkt) {}
+    // used to push Codelets out to CUs
+    bool sendRequest(codelet_t *toPush, Addr dest);
 
     /**
      * Tell the CPU side to ask for our memory ranges.
@@ -173,15 +170,18 @@ class SU : public ClockedObject
     /// Number of slots in Codelet queue
     const unsigned capacity;
 
-    AddrRange suRange;
+    // range for dep. signalling
+    AddrRange suSigRange;
+    // range for codelet retirement
+    AddrRange suRetRange;
 
     // codReqPort used for pushing Codelets to CU
     CodSideReqPort codReqPort;
     // codRespPorts used for receiving Codelet retirements and dependency signaling from CU
     std::vector<CodSideRespPort> codRespPorts;
 
-    /// True if this cache is currently blocked waiting for a response.
     bool blocked;
+    bool reqBlocked;
 
     /// Packet that we are currently handling. Used for upgrading to larger
     /// cache line sizes
@@ -193,8 +193,8 @@ class SU : public ClockedObject
     /// For tracking the miss latency
     Tick missTime;
 
-    /// Leaving this here for now; should be changed to Codelet queue
-    std::unordered_map<Addr, uint8_t*> cacheStore;
+    // FIFO codelet queue
+    std::queue<codelet_t> codQueue;
 
     /// SU statistics
   protected:
@@ -207,6 +207,12 @@ class SU : public ClockedObject
     } stats;
 
   public:
+
+    // temporary, remove when no longer needed
+    void sendRequestExt(codelet_t *toSend, Addr dest);
+
+    // trying this; SU is not sending range change on startup....
+    void init() override;
 
     /** constructor
      */
