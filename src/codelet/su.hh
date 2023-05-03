@@ -164,22 +164,29 @@ class SU : public ClockedObject
      */
     void sendRangeChange() const;
 
+    // Loads the Codelets from the user space program
+    // they are located in a specifically namd elf section
+    void getCodelets();
+
+    // event used to perform tasks and advance cycles
+    EventFunctionWrapper tickEvent;
+
+    // Params
+    System * system;
     /// Latency representing dependency signaling overhead
     const Cycles sigLatency;
-
     /// Number of slots in Codelet queue
     const unsigned capacity;
-
     // range for dep. signalling
     AddrRange suSigRange;
     // range for codelet retirement
     AddrRange suRetRange;
-
     // codReqPort used for pushing Codelets to CU
     CodSideReqPort codReqPort;
     // codRespPorts used for receiving Codelet retirements and dependency signaling from CU
     std::vector<CodSideRespPort> codRespPorts;
 
+    // port flow control -- may be changed later for queued ports
     bool blocked;
     bool reqBlocked;
 
@@ -214,6 +221,8 @@ class SU : public ClockedObject
 
     // trying this; SU is not sending range change on startup....
     void init() override;
+    void startup() override;
+    void tick();
 
     /** constructor
      */

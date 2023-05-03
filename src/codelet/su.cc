@@ -16,7 +16,9 @@ namespace gem5
 
 #define SYNCSLOT_SIZE 32 //just a placeholder value...
 
-void getCodelets(System * system, std::queue<codelet_t> * codQueue, SU * owner)
+//void getCodelets(System * system, std::queue<codelet_t> * codQueue, SU * owner)
+void
+SU::getCodelets()
 {
     ThreadContext *tmp_context = system->threads[0];
     loader::ObjectFile *tmp_obj = tmp_context->getProcessPtr()->objFile;
@@ -50,7 +52,6 @@ void getCodelets(System * system, std::queue<codelet_t> * codQueue, SU * owner)
         // actually copy over the codelets now
         Elf_Data *prog_data = elf_getdata(section, NULL);
         //DPRINTF(SULoader, "Codelet program data located at %p\n", prog_data);
-        //long unsigned * codelet_program = (long unsigned *) prog_data->d_buf;
         codelet_t * codelet_program = (codelet_t *) prog_data->d_buf;
         size_t codelet_count = prog_data->d_size / sizeof(codelet_t);
         DPRINTF(SULoader, "Codelet program located at %p with %u codelets\n", codelet_program, codelet_count);
@@ -59,24 +60,18 @@ void getCodelets(System * system, std::queue<codelet_t> * codQueue, SU * owner)
             codelet_t *localCod = (codelet_t *) malloc(sizeof(codelet_t));
             memcpy(localCod, &(codelet_program[i]), sizeof(codelet_t));
             DPRINTF(SULoader, "codelet %d is at address %p in elf\n", i, &(codelet_program[i]));
-            //codelet_t localCod;
-            // have to navigate some padding below -- could solve this by packing the codelet_t struct??
-            //localCod->fire = reinterpret_cast<fire_t>(codelet_program[i*2]);
-            //localCod->id = (unsigned) reinterpret_cast<unsigned *>(codelet_program[i*2 + 1]);
-            //DPRINTF(SULoader, "SU reading from elf codelet with addr %p and id %u\n", localCod.fire, localCod.id);
-            //DPRINTF(SULoader, "SU reading from elf codelet with addr %p and id %u\n", (void *)localCod->fire, localCod->id);
-            //DPRINTF(SULoader, "codelet in elf is: %lx %lx %lx\n", codelet_program[i*3], codelet_program[i*3+1], codelet_program[i*3+2]);
             DPRINTF(SULoader, "real codelet is: %p %x %x %x %x\n", (void *)localCod->fire, localCod->dest, localCod->src1, localCod->src2, localCod->id);
-            codQueue->push(*localCod);
-            //free(localCod);
+            //codQueue->push(*localCod);
+            codQueue.push(*localCod);
+            free(localCod);
         }
         // hardcode interface addr here for testing
         Addr interface_addr(0x90000000);
         Cycles latency_scale(2000); //hardcoded hopefully high enough to not be blocked
         codelet_t * toSend = (codelet_t *) malloc(sizeof(codelet_t));
-        *toSend = codQueue->front();
-        codQueue->pop();
-        owner->scheduleRequestExt(toSend, interface_addr, latency_scale);
+        *toSend = codQueue.front();
+        codQueue.pop();
+        scheduleRequestExt(toSend, interface_addr, latency_scale);
         //for test printing
         /*
         long unsigned * printable_program = (long unsigned *) prog_data->d_buf;
@@ -438,10 +433,39 @@ void
 SU::init()
 {
     sendRangeChange();    
+    /*
+    std::queue<codelet_t> * tmpQPtr = &codQueue;
+    SU * forLambda = this;
+    schedule(new EventFunctionWrapper([this, params, tmpQPtr, forLambda]{ getCodelets(params.system, tmpQPtr, forLambda); },
+                                    name() + ".loadCodeletsEvent", true),
+                    clockEdge(sigLatency));
+    */
+   //getCodelets(system, &codQueue, this);
+   // loads codelets from a specific section in the elf file
+   getCodelets();
+}
+
+void
+SU::startup()
+{
+    // here: schedule first tick
+    // each tick should check first if there are codelets
+    // in the codelet space that should go to the queue
+    // then should push out codelets from the queue -- one per tick?
+    // maybe should base it off the reqBlocked variable
+}
+
+void
+SU::tick()
+{
+
 }
 
 SU::SU(const SUParams &params) :
     ClockedObject(params),
+    tickEvent([this]{ tick(); }, "SU tick",
+                false, Event::CPU_Tick_Pri),
+    system(params.system),
     sigLatency(params.sig_latency),
     capacity(params.size / SYNCSLOT_SIZE),
     suSigRange(params.su_sig_range),
@@ -454,11 +478,13 @@ SU::SU(const SUParams &params) :
         // again unsure of the param name ...
         codRespPorts.emplace_back(name() + csprintf(".cod_side_resp_ports[%d]", i), i, this);
     }
+    /*
     std::queue<codelet_t> * tmpQPtr = &codQueue;
     SU * forLambda = this;
     schedule(new EventFunctionWrapper([this, params, tmpQPtr, forLambda]{ getCodelets(params.system, tmpQPtr, forLambda); },
                                     name() + ".loadCodeletsEvent", true),
                     clockEdge(sigLatency));
+    */
 }
 
 Port &
