@@ -1,6 +1,7 @@
 
 #include "debug/SU.hh"
 #include "debug/SULoader.hh"
+#include "debug/SUCod.hh"
 #include "sim/system.hh"
 #include "sim/process.hh"
 #include "base/loader/elf_object.hh"
@@ -49,36 +50,33 @@ void getCodelets(System * system, std::queue<codelet_t> * codQueue, SU * owner)
         // actually copy over the codelets now
         Elf_Data *prog_data = elf_getdata(section, NULL);
         //DPRINTF(SULoader, "Codelet program data located at %p\n", prog_data);
-        long unsigned * codelet_program = (long unsigned *) prog_data->d_buf;
+        //long unsigned * codelet_program = (long unsigned *) prog_data->d_buf;
+        codelet_t * codelet_program = (codelet_t *) prog_data->d_buf;
         size_t codelet_count = prog_data->d_size / sizeof(codelet_t);
-        //DPRINTF(SULoader, "Codelet program located at %p with %u codelets\n", codelet_program, codelet_count);
-        //DPRINTF(SULoader, "size of codelet: %u\n", sizeof(codelet_t));
+        DPRINTF(SULoader, "Codelet program located at %p with %u codelets\n", codelet_program, codelet_count);
+        DPRINTF(SULoader, "size of codelet: %u\n", sizeof(codelet_t));
         for (int i=0; i<codelet_count; i++) {
             codelet_t *localCod = (codelet_t *) malloc(sizeof(codelet_t));
+            memcpy(localCod, &(codelet_program[i]), sizeof(codelet_t));
+            DPRINTF(SULoader, "codelet %d is at address %p in elf\n", i, &(codelet_program[i]));
             //codelet_t localCod;
             // have to navigate some padding below -- could solve this by packing the codelet_t struct??
-            //localCod.fire = (fire_t) codelet_program[i*2];
-            localCod->fire = reinterpret_cast<fire_t>(codelet_program[i*2]);
-            //localCod.id = (unsigned) codelet_program[i*2 + 1];
-            localCod->id = (unsigned) codelet_program[i*2 + 1];
+            //localCod->fire = reinterpret_cast<fire_t>(codelet_program[i*2]);
+            //localCod->id = (unsigned) reinterpret_cast<unsigned *>(codelet_program[i*2 + 1]);
             //DPRINTF(SULoader, "SU reading from elf codelet with addr %p and id %u\n", localCod.fire, localCod.id);
             //DPRINTF(SULoader, "SU reading from elf codelet with addr %p and id %u\n", (void *)localCod->fire, localCod->id);
-            //DPRINTF(SULoader, "compared with long unsigned %lx\n", codelet_program[i*2]);
-            char * charFire = (char *)localCod->fire;
-            if (i==0) {
-                for (int j=0; j<sizeof(fire_t); j++) {
-                    DPRINTF(SULoader, "%02x\n", charFire[j]);
-                }
-            }
-            //codQueue->push(localCod);
+            //DPRINTF(SULoader, "codelet in elf is: %lx %lx %lx\n", codelet_program[i*3], codelet_program[i*3+1], codelet_program[i*3+2]);
+            DPRINTF(SULoader, "real codelet is: %p %x %x %x %x\n", (void *)localCod->fire, localCod->dest, localCod->src1, localCod->src2, localCod->id);
             codQueue->push(*localCod);
+            //free(localCod);
         }
+        // hardcode interface addr here for testing
+        Addr interface_addr(0x90000000);
+        Cycles latency_scale(2000); //hardcoded hopefully high enough to not be blocked
         codelet_t * toSend = (codelet_t *) malloc(sizeof(codelet_t));
         *toSend = codQueue->front();
         codQueue->pop();
-        // hardcode interface addr here for testing
-        Addr interface_addr(0x90000000);
-        owner->sendRequestExt(toSend, interface_addr);
+        owner->scheduleRequestExt(toSend, interface_addr, latency_scale);
         //for test printing
         /*
         long unsigned * printable_program = (long unsigned *) prog_data->d_buf;
@@ -92,9 +90,19 @@ void getCodelets(System * system, std::queue<codelet_t> * codQueue, SU * owner)
 }
 
 void
+SU::scheduleRequestExt(codelet_t * toSend, Addr dest, Cycles latency)
+{
+    schedule(new EventFunctionWrapper([this, toSend, dest]{ sendRequestExt(toSend, dest); },
+                                    name() + ".pushCodeletEvent", true),
+                    clockEdge(latency));
+
+}
+
+bool
 SU::sendRequestExt(codelet_t * toSend, Addr dest)
 {
-    sendRequest(toSend, dest);
+    DPRINTF(SUCod, "push Codelet to interface\n");
+    return(sendRequest(toSend, dest));
 }
 
 // -------------------------------------------------------------------------------------------
@@ -288,6 +296,16 @@ SU::handleResponse(PacketPtr pkt)
     // called when response received on CodSideReqPort, meaning Codelet is done being pushed...
     // just release block
     reqBlocked = false;
+
+    // for now, hardcode immediately scheduling a new codelet push
+    if (codQueue.size() > 0) {
+        Addr interface_addr(0x90000000);
+        Cycles latency_scale(2000); //hardcoded hopefully high enough to not be blocked
+        codelet_t * toSend = (codelet_t *) malloc(sizeof(codelet_t));
+        *toSend = codQueue.front();
+        codQueue.pop();
+        scheduleRequestExt(toSend, interface_addr, sigLatency);
+    }
 
     return true;
 }

@@ -18,6 +18,7 @@ namespace gem5
 //std::string test_fire = "helloCodFire";
 std::string test_fire = "_Z12helloCodFirev";
 
+/*
 void pushCod(System *system, std::queue<codelet_t> *codQueue)
 {
     ThreadContext *tmp_context = system->threads[0];
@@ -37,8 +38,9 @@ void pushCod(System *system, std::queue<codelet_t> *codQueue)
     }
 
 }
+*/
 
-#define CODELET_SIZE 32 //just a placeholder value...
+#define CODELET_SIZE sizeof(codelet_t) 
 CodeletInterface::CodeletInterface(const CodeletInterfaceParams &params) :
     ClockedObject(params),
     queueLatency(params.queue_latency),
@@ -170,7 +172,7 @@ CodeletInterface::accessFunctional(PacketPtr pkt)
         //pkt->setSize(sizeof(codelet_t));
         //pkt->setSize(sizeof(fire_t));
         // no byte swapping, set new data
-        DPRINTF(CodeletInterfaceQueue, "popping Codelet from queue to send\n");
+        DPRINTF(CodeletInterfaceQueue, "popping Codelet from queue to send with fire %lx\n", (unsigned long) toPop.fire);
         return(true);
     }
     else if (pkt->isWrite()) {

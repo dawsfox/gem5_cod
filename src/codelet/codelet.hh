@@ -20,9 +20,11 @@ class Codelet
 typedef void (*fire_t)();
 
 typedef struct codelet_s {
-    //void (*fire)() = nullptr;
     fire_t fire = nullptr;
-    unsigned id;
+    unsigned int dest;
+    unsigned int src1;
+    unsigned int src2;
+    unsigned int id;
 } codelet_t;
 
 

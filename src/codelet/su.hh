@@ -209,7 +209,8 @@ class SU : public ClockedObject
   public:
 
     // temporary, remove when no longer needed
-    void sendRequestExt(codelet_t *toSend, Addr dest);
+    bool sendRequestExt(codelet_t *toSend, Addr dest);
+    void scheduleRequestExt(codelet_t *toSend, Addr dest, Cycles latency);
 
     // trying this; SU is not sending range change on startup....
     void init() override;
