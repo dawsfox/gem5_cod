@@ -65,6 +65,7 @@ SU::getCodelets()
             codQueue.push(*localCod);
             free(localCod);
         }
+        /*
         // hardcode interface addr here for testing
         Addr interface_addr(0x90000000);
         Cycles latency_scale(2000); //hardcoded hopefully high enough to not be blocked
@@ -73,7 +74,6 @@ SU::getCodelets()
         codQueue.pop();
         scheduleRequestExt(toSend, interface_addr, latency_scale);
         //for test printing
-        /*
         long unsigned * printable_program = (long unsigned *) prog_data->d_buf;
         size_t byte_size = prog_data->d_size;
         for (int i=0; i<byte_size/8; i++) {
@@ -293,6 +293,7 @@ SU::handleResponse(PacketPtr pkt)
     reqBlocked = false;
 
     // for now, hardcode immediately scheduling a new codelet push
+    /*
     if (codQueue.size() > 0) {
         Addr interface_addr(0x90000000);
         Cycles latency_scale(2000); //hardcoded hopefully high enough to not be blocked
@@ -301,6 +302,7 @@ SU::handleResponse(PacketPtr pkt)
         codQueue.pop();
         scheduleRequestExt(toSend, interface_addr, sigLatency);
     }
+     */
 
     return true;
 }
@@ -449,22 +451,43 @@ void
 SU::startup()
 {
     // here: schedule first tick
-    // each tick should check first if there are codelets
-    // in the codelet space that should go to the queue
-    // then should push out codelets from the queue -- one per tick?
-    // maybe should base it off the reqBlocked variable
+    DPRINTF(SU, "scheduling first tick\n");
+    schedule(tickEvent, clockEdge(Cycles(1)));
 }
 
 void
 SU::tick()
 {
-
+    //DPRINTF(SU, "SU ticking\n");
+    // each tick should check first if there are codelets
+    // in the codelet space that should go to the queue
+    /* no local codelet space setup yet so lets ignore first part */
+    // then should push out codelets from the queue -- one per tick?
+    if (!codQueue.empty() && !reqBlocked) {
+        Addr interface_addr(0x90000000);
+        codelet_t * localCod = (codelet_t *) malloc(sizeof(codelet_t));
+        *localCod = codQueue.front();
+        codQueue.pop();
+        sendRequest(localCod, interface_addr);
+    }
+    else if (!reqBlocked) { // if queue empty but requests aren't blocked
+        // later, this should be wrapped in a private function
+        // for now we are saying if no codelets left, end
+        // later it will be based on deps / program flow
+        Addr interface_addr(0x90000000);
+        sendRequest(&finalCod, interface_addr);
+        aliveSig = false;
+    }
+    if (aliveSig) {
+        schedule(tickEvent, clockEdge(Cycles(1)));
+    }
 }
 
 SU::SU(const SUParams &params) :
     ClockedObject(params),
     tickEvent([this]{ tick(); }, "SU tick",
                 false, Event::CPU_Tick_Pri),
+    aliveSig(true),
     system(params.system),
     sigLatency(params.sig_latency),
     capacity(params.size / SYNCSLOT_SIZE),

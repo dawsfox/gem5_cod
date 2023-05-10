@@ -171,6 +171,10 @@ class SU : public ClockedObject
     // event used to perform tasks and advance cycles
     EventFunctionWrapper tickEvent;
 
+    codelet_t finalCod = {(fire_t)0xffffffffffffffff, 0,0,0,0}; //final codelet definition
+
+    bool aliveSig;
+
     // Params
     System * system;
     /// Latency representing dependency signaling overhead

@@ -58,19 +58,21 @@ void helloCodFireThree() {
 
 int main(int argc, char* argv[])
 {
-    printf("helloCodFire is located at %#x\n", helloCodFire);
-    for (int i=0; i<10; i++) {
+    bool alive_sig = true;
+    printf("helloCodFire is located at %p\n", (void *)helloCodFire);
+    while(alive_sig) {
+    //for (int i=0; i<10; i++) {
         volatile fire_t fire;
         fire = *(fire_t *)interface_queue_addr;
         //asm volatile("mov %1, (%0)" : "=r" (tmp_cod.fire) : "r" (interface_queue_addr));
-            printf("fire = %p\n", (void *)fire);
-        if (fire != nullptr) {
+        printf("fire = %p\n", (void *)fire);
+        if (fire != nullptr && fire != (fire_t)0xffffffffffffffff) {
             fire();
-        } else {
-            //printf("fire = %p\n", (void *)fire);
+        } else if (fire == (fire_t)0xffffffffffffffff) {
+            alive_sig = false;
+            printf("program ending\n");
         }
-
-        printf("done popping\n");
     }
+    printf("program returning\n");
     return(0);
 }
