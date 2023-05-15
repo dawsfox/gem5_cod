@@ -51,28 +51,24 @@ SU::getCodelets()
     if (program_found) {
         // actually copy over the codelets now
         Elf_Data *prog_data = elf_getdata(section, NULL);
-        //DPRINTF(SULoader, "Codelet program data located at %p\n", prog_data);
-        codelet_t * codelet_program = (codelet_t *) prog_data->d_buf;
-        size_t codelet_count = prog_data->d_size / sizeof(codelet_t);
-        DPRINTF(SULoader, "Codelet program located at %p with %u codelets\n", codelet_program, codelet_count);
-        DPRINTF(SULoader, "size of codelet: %u\n", sizeof(codelet_t));
+        //DPRINTF(SULoader, "Codelet data located at %p\n", prog_data);
+        user_codelet_t * codelet_list = (user_codelet_t *) prog_data->d_buf;
+        size_t codelet_count = prog_data->d_size / sizeof(user_codelet_t);
+        DPRINTF(SULoader, "Codelet list located at %p with %u codelets\n", codelet_list, codelet_count);
+        DPRINTF(SULoader, "size of user codelet: %u\n", sizeof(user_codelet_t));
         for (int i=0; i<codelet_count; i++) {
             codelet_t *localCod = (codelet_t *) malloc(sizeof(codelet_t));
-            memcpy(localCod, &(codelet_program[i]), sizeof(codelet_t));
-            DPRINTF(SULoader, "codelet %d is at address %p in elf\n", i, &(codelet_program[i]));
-            DPRINTF(SULoader, "real codelet is: %p %x %x %x %x\n", (void *)localCod->fire, localCod->dest, localCod->src1, localCod->src2, localCod->id);
-            //codQueue->push(*localCod);
-            codQueue.push(*localCod);
+            //memcpy(localCod, &(codelet_program[i]), sizeof(codelet_t));
+            strcpy(localCod->name, codelet_list[i].name);
+            localCod->fire = codelet_list[i].fire;
+            DPRINTF(SULoader, "codelet %d is at address %p in elf\n", i, &(codelet_list[i]));
+            DPRINTF(SULoader, "real codelet is: %p - %s\n", (void *)localCod->fire, localCod->name);
+            //DPRINTF(SULoader, "real codelet is: %p %x %x %x %x\n", (void *)localCod->fire, localCod->dest, localCod->src1, localCod->src2, localCod->id);
+            //codQueue.push(*localCod);
+            codSpace[i] = *localCod;
             free(localCod);
         }
         /*
-        // hardcode interface addr here for testing
-        Addr interface_addr(0x90000000);
-        Cycles latency_scale(2000); //hardcoded hopefully high enough to not be blocked
-        codelet_t * toSend = (codelet_t *) malloc(sizeof(codelet_t));
-        *toSend = codQueue.front();
-        codQueue.pop();
-        scheduleRequestExt(toSend, interface_addr, latency_scale);
         //for test printing
         long unsigned * printable_program = (long unsigned *) prog_data->d_buf;
         size_t byte_size = prog_data->d_size;
@@ -84,6 +80,19 @@ SU::getCodelets()
 
 }
 
+void
+SU::getRegs(std::string progLine)
+{
+
+}
+
+void
+SU::analyzeProgram()
+{
+
+}
+
+/*
 void
 SU::scheduleRequestExt(codelet_t * toSend, Addr dest, Cycles latency)
 {
@@ -99,6 +108,7 @@ SU::sendRequestExt(codelet_t * toSend, Addr dest)
     DPRINTF(SUCod, "push Codelet to interface\n");
     return(sendRequest(toSend, dest));
 }
+*/
 
 // -------------------------------------------------------------------------------------------
 
@@ -435,16 +445,8 @@ void
 SU::init()
 {
     sendRangeChange();    
-    /*
-    std::queue<codelet_t> * tmpQPtr = &codQueue;
-    SU * forLambda = this;
-    schedule(new EventFunctionWrapper([this, params, tmpQPtr, forLambda]{ getCodelets(params.system, tmpQPtr, forLambda); },
-                                    name() + ".loadCodeletsEvent", true),
-                    clockEdge(sigLatency));
-    */
-   //getCodelets(system, &codQueue, this);
-   // loads codelets from a specific section in the elf file
-   getCodelets();
+    getCodelets();
+    analyzeProgram();
 }
 
 void
@@ -485,6 +487,7 @@ SU::tick()
 
 SU::SU(const SUParams &params) :
     ClockedObject(params),
+    scmProgram(params.scm_program),
     tickEvent([this]{ tick(); }, "SU tick",
                 false, Event::CPU_Tick_Pri),
     aliveSig(true),
@@ -501,13 +504,7 @@ SU::SU(const SUParams &params) :
         // again unsure of the param name ...
         codRespPorts.emplace_back(name() + csprintf(".cod_side_resp_ports[%d]", i), i, this);
     }
-    /*
-    std::queue<codelet_t> * tmpQPtr = &codQueue;
-    SU * forLambda = this;
-    schedule(new EventFunctionWrapper([this, params, tmpQPtr, forLambda]{ getCodelets(params.system, tmpQPtr, forLambda); },
-                                    name() + ".loadCodeletsEvent", true),
-                    clockEdge(sigLatency));
-    */
+    DPRINTF(SULoader, "SCM Program loaded:\n%s", scmProgram);
 }
 
 Port &

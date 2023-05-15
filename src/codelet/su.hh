@@ -167,6 +167,15 @@ class SU : public ClockedObject
     // Loads the Codelets from the user space program
     // they are located in a specifically namd elf section
     void getCodelets();
+    
+    // builds full codelet structs based on the info from user codelets
+    // and the actual SCM program
+    void analyzeProgram();
+
+    // parses line of the SCM program and sets register dependencies
+    void getRegs(std::string progLine);
+
+    std::string scmProgram;
 
     // event used to perform tasks and advance cycles
     EventFunctionWrapper tickEvent;
@@ -206,6 +215,9 @@ class SU : public ClockedObject
 
     // FIFO codelet queue
     std::queue<codelet_t> codQueue;
+
+    // Size should probably be made a SU param later
+    codelet_t codSpace[32];
 
     /// SU statistics
   protected:

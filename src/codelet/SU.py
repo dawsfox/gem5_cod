@@ -11,6 +11,7 @@ class SU(ClockedObject):
     cod_side_resp_ports = VectorResponsePort("Response ports for handling decDep signaling and Codelet retiring")
     cod_side_req_port =  RequestPort("Request port for pushing Codelets to CUs")
 
+    scm_program = Param.String("Text of the SCM program to be loaded into the SU")
 
     su_sig_range = Param.AddrRange("Address range used by SU for dependency signalling")
     su_ret_range = Param.AddrRange("Address range used by SU for codelet retirement")

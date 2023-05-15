@@ -57,18 +57,23 @@ system.cpu = X86TimingSimpleCPU()
 system.codelet_interface = CodeletInterface()
 system.codelet_interface.queue_range = AddrRange(start = Addr(0x90000000), 
                                                  end = Addr(0x90000000)
-                                                 + 0x20) #range should be size of codelet_t...
+                                                 + 0x40) #range should be size of codelet_t...
 # Create SU
 system.su = SU()
 # Arbitrary starting address for SU local storage; can change later
-system.su.su_sig_range = AddrRange(start = Addr(0x90000020),
-                                end = Addr(0x90000020)
-                                + 0x88) #random number to start with; roughly 16kB
+system.su.su_sig_range = AddrRange(start = Addr(0x90000040),
+                                end = Addr(0x90000040)
+                                + 0x40) #random number to start with; roughly 16kB
 
-system.su.su_ret_range = AddrRange(start = Addr(0x900000a8),
-                                end = Addr(0x900000a8)
+system.su.su_ret_range = AddrRange(start = Addr(0x90000080),
+                                end = Addr(0x90000080)
                                 + 0x8) #random number to start with; roughly 8.
                                 # ends at 0x900000b0
+
+# Read in the contents of the SCM program as a string to send to the SU as a parameter
+with open("/home/dfox/gem5_cod/tests/test-progs/codelet/src/test_prog.scm") as f:
+    contents = f.read()
+    system.su.scm_program = contents
 
 # Create a memory bus, a coherent crossbar, in this case
 system.membus = SystemXBar()
