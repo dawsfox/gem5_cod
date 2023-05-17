@@ -6,6 +6,11 @@
 #include "params/SU.hh"
 #include "sim/clocked_object.hh"
 #include "codelet/codelet.hh"
+// mixed naming conventions :/
+#include "codelet/SCMUlate/include/modules/fetch_decode.hpp"
+#include "codelet/SCMUlate/include/modules/control_store.hpp"
+#include "codelet/SCMUlate/include/modules/instruction_mem.hpp"
+#include "codelet/SCMUlate/include/modules/register.hpp"
 #include <queue>
 
 namespace gem5
@@ -175,7 +180,28 @@ class SU : public ClockedObject
     // parses line of the SCM program and sets register dependencies
     void getRegs(std::string progLine);
 
-    std::string scmProgram;
+    /* SCM modules go here; they will handle behavior based on the SCM
+     * program. Fetch decode module is used to schedule instructions 
+     * based on the instruction level parallelism instantiation. The
+     * instruction level parallelism instantiation is chosen based
+     * on the ilpMode parameter. Function for pushing Codelets to CUs will
+     * be replaced with one that pushes through a request packet, and
+     * Codelets finishing will be triggered when a codelet retirement
+     * request comes from the CodeletInterface */
+
+    scm::reg_file_module regFile; // needed to created instructionMem
+    scm::control_store_module controlStore;
+    scm::inst_mem_module instructionMem; // needed for fetchDecode. Will take regFile and scmFileName
+
+    /* Try to pass controlStore as nullptr to fetchDecode if possible, because we will replace the
+     * mechanisms for execution that it provides. Alternatively, could alter the controlStore to 
+     * provide the functionality we want. That would probably be better coding practice */
+    // ilpMode can be: SEQUENTIAL, SUPERSCALAR, OOO
+    scm::ILP_MODES ilpMode;
+    scm::fetch_decode_module fetchDecode;
+
+    //std::string scmFileName;
+    const char * scmFileName;
 
     // event used to perform tasks and advance cycles
     EventFunctionWrapper tickEvent;

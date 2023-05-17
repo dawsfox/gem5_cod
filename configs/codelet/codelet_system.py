@@ -70,10 +70,12 @@ system.su.su_ret_range = AddrRange(start = Addr(0x90000080),
                                 + 0x8) #random number to start with; roughly 8.
                                 # ends at 0x900000b0
 
-# Read in the contents of the SCM program as a string to send to the SU as a parameter
-with open("/home/dfox/gem5_cod/tests/test-progs/codelet/src/test_prog.scm") as f:
-    contents = f.read()
-    system.su.scm_program = contents
+# Read in the file name of the SCM program as a string to send to the SU as a parameter
+system.su.scm_file_name = "/home/dfox/gem5_cod/tests/test-progs/codelet/src/test_prog.scm"
+
+#with open("/home/dfox/gem5_cod/tests/test-progs/codelet/src/test_prog.scm") as f:
+#    contents = f.read()
+#    system.su.scm_program = contents
 
 # Create a memory bus, a coherent crossbar, in this case
 system.membus = SystemXBar()

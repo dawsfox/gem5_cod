@@ -10,13 +10,11 @@
 #include "codelet/codelet.hh"
 #include "gelf.h"
 #include <string.h>
+#include <cstring>
 
 namespace gem5
 {
 
-#define SYNCSLOT_SIZE 32 //just a placeholder value...
-
-//void getCodelets(System * system, std::queue<codelet_t> * codQueue, SU * owner)
 void
 SU::getCodelets()
 {
@@ -487,24 +485,30 @@ SU::tick()
 
 SU::SU(const SUParams &params) :
     ClockedObject(params),
-    scmProgram(params.scm_program),
+    controlStore(1),
+    instructionMem(params.scm_file_name.data(), &regFile),
+    ilpMode(scm::SEQUENTIAL),
+    fetchDecode(&instructionMem, &controlStore, &aliveSig, ilpMode, this),
+    scmFileName(params.scm_file_name.data()),
     tickEvent([this]{ tick(); }, "SU tick",
                 false, Event::CPU_Tick_Pri),
     aliveSig(true),
     system(params.system),
     sigLatency(params.sig_latency),
-    capacity(params.size / SYNCSLOT_SIZE),
+    capacity(params.size), //should make this more accurate later, right now it doesn't matter
     suSigRange(params.su_sig_range),
     suRetRange(params.su_ret_range),
     codReqPort(params.name + ".cod_side_req_port", this),
     blocked(false), reqBlocked(false), originalPacket(nullptr), 
     waitingPortId(-1), stats(this)
 {
+    //strcpy(scmFileName, params.scm_file_name.c_str());
+    //instructionMem(scmFileName, &regFile);
     for (int i = 0; i < params.port_cod_side_resp_ports_connection_count; i++) {
         // again unsure of the param name ...
         codRespPorts.emplace_back(name() + csprintf(".cod_side_resp_ports[%d]", i), i, this);
     }
-    DPRINTF(SULoader, "SCM Program loaded:\n%s", scmProgram);
+    DPRINTF(SULoader, "SCM Program loaded from %s", scmFileName);
 }
 
 Port &
