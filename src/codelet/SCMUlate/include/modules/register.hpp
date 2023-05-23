@@ -21,6 +21,7 @@ namespace scm {
     
     public: 
       reg_file_module();
+      reg_file_module(register_file_t *reg_file);
       void describeRegisterFile();
       bool checkRegisterConfig();
       static inline uint32_t getRegisterSizeInBytes(std::string size) {

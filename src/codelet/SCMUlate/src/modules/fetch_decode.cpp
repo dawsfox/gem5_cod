@@ -1,4 +1,5 @@
 #include "codelet/SCMUlate/include/modules/fetch_decode.hpp"
+#include "codelet/su.hh"
 #include <string>
 #include <vector>
 
@@ -205,15 +206,17 @@ int scm::fetch_decode_module::behavior()
 /* Variant of the behavior function that's adapted to only perform one iteration for usaged in the SU */
 int scm::fetch_decode_module::tickBehavior()
 {
-  ITT_DOMAIN(fetch_decode_module_behavior);
-  ITT_STR_HANDLE(checkMarkInstructionToSched);
-  ITT_STR_HANDLE(instructionFinished);
+  //ITT_DOMAIN(fetch_decode_module_behavior);
+  //ITT_STR_HANDLE(checkMarkInstructionToSched);
+  //ITT_STR_HANDLE(instructionFinished);
   uint64_t stall = 0, waiting = 0, ready = 0, execution_done = 0, executing = 0, decomision = 0;
   bool committed = false; 
+  /*
   TIMERS_COUNTERS_GUARD(
       this->time_cnt_m->addEvent(this->su_timer_name, SU_START););
   SCMULATE_INFOMSG(1, "Initializing the SU");
-  while (*(this->aliveSignal)) {
+   */
+  //while (*(this->aliveSignal)) {
     // FETCHING PC
     int fetch_reps = 0;
     scm::decoded_instruction_t *new_inst = nullptr;
@@ -229,12 +232,12 @@ int scm::fetch_decode_module::tickBehavior()
           }
           // Insert new instruction
           if (this->inst_buff_m.add_instruction(*new_inst)) {
-            TIMERS_COUNTERS_GUARD(
-              this->time_cnt_m->addEvent(this->su_timer_name, FETCH_DECODE_INSTRUCTION, std::string("PC = ") + std::to_string(PC) + std::string(" ") + new_inst->getFullInstruction()););
+            //TIMERS_COUNTERS_GUARD(
+              //this->time_cnt_m->addEvent(this->su_timer_name, FETCH_DECODE_INSTRUCTION, std::string("PC = ") + std::to_string(PC) + std::string(" ") + new_inst->getFullInstruction()););
             SCMULATE_INFOMSG(5, "Executing PC = %d", this->PC);
-            ITT_TASK_BEGIN(fetch_decode_module_behavior, checkMarkInstructionToSched);
+            //ITT_TASK_BEGIN(fetch_decode_module_behavior, checkMarkInstructionToSched);
             instructionLevelParallelism.checkMarkInstructionToSched(this->inst_buff_m.get_latest());
-            ITT_TASK_END(checkMarkInstructionToSched);
+            //ITT_TASK_END(checkMarkInstructionToSched);
             if (this->inst_buff_m.get_latest()->second == instruction_state::STALL) {
                 this->stallingInstruction = this->inst_buff_m.get_latest();
                 SCMULATE_INFOMSG(5, "Stalling on %s", stallingInstruction->first->getFullInstruction().c_str());
@@ -244,8 +247,8 @@ int scm::fetch_decode_module::tickBehavior()
             committed = new_inst->getOpcode() == COMMIT_INST.opcode;
             SCMULATE_INFOMSG(5, "incrementing PC");
             this->PC++;
-            TIMERS_COUNTERS_GUARD(
-              this->time_cnt_m->addEvent(this->su_timer_name, SU_IDLE, std::string("PC = ") + std::to_string(PC)) );
+            //TIMERS_COUNTERS_GUARD(
+              //this->time_cnt_m->addEvent(this->su_timer_name, SU_IDLE, std::string("PC = ") + std::to_string(PC)) );
           }
         } else {
           new_inst = this->stallingInstruction->first;
@@ -264,17 +267,17 @@ int scm::fetch_decode_module::tickBehavior()
       switch (current_pair->second) {
         case instruction_state::STALL:
           stall++;
-          ITT_TASK_BEGIN(fetch_decode_module_behavior, checkMarkInstructionToSched);
+          //ITT_TASK_BEGIN(fetch_decode_module_behavior, checkMarkInstructionToSched);
           instructionLevelParallelism.checkMarkInstructionToSched(current_pair);
-          ITT_TASK_END(checkMarkInstructionToSched);
+          //ITT_TASK_END(checkMarkInstructionToSched);
           if (current_pair->second == instruction_state::STALL)
             this->stallingInstruction = current_pair;
           break;
         case instruction_state::WAITING:
           waiting++;
-          ITT_TASK_BEGIN(fetch_decode_module_behavior, checkMarkInstructionToSched);
+          //ITT_TASK_BEGIN(fetch_decode_module_behavior, checkMarkInstructionToSched);
           instructionLevelParallelism.checkMarkInstructionToSched(current_pair);
-          ITT_TASK_END(checkMarkInstructionToSched);
+          //ITT_TASK_END(checkMarkInstructionToSched);
           if (current_pair->second == instruction_state::STALL) {
             this->stallingInstruction = current_pair;
             SCMULATE_INFOMSG(5, "Stalling on %s", stallingInstruction->first->getFullInstruction().c_str());
@@ -303,12 +306,12 @@ int scm::fetch_decode_module::tickBehavior()
               break;
             case EXECUTE_INST:
               SCMULATE_INFOMSG(4, "Scheduling an EXECUTE_INST %s", current_pair->first->getFullInstruction().c_str());
-              if (!attemptAssignExecuteInstruction(current_pair))
+              if (!gemAttemptAssignExecuteInstruction(current_pair))
                 current_pair->second = instruction_state::READY;
               break;
             case MEMORY_INST:
               SCMULATE_INFOMSG(4, "Scheduling a MEMORY_INST %s", current_pair->first->getFullInstruction().c_str());
-              if (!attemptAssignExecuteInstruction(current_pair))
+              if (!gemAttemptAssignExecuteInstruction(current_pair))
                 current_pair->second = instruction_state::READY;
               break;
             default:
@@ -320,20 +323,20 @@ int scm::fetch_decode_module::tickBehavior()
         
         case instruction_state::EXECUTION_DONE:
           execution_done ++;
-          TIMERS_COUNTERS_GUARD(
-            this->time_cnt_m->addEvent(this->su_timer_name, DISPATCH_INSTRUCTION, current_pair->first->getFullInstruction()););
+          //TIMERS_COUNTERS_GUARD(
+            //this->time_cnt_m->addEvent(this->su_timer_name, DISPATCH_INSTRUCTION, current_pair->first->getFullInstruction()););
           // check if stalling instruction
           if (this->stallingInstruction != nullptr && this->stallingInstruction == current_pair) {
             SCMULATE_INFOMSG(5, "Unstalling on %s", stallingInstruction->first->getFullInstruction().c_str());
             this->stallingInstruction = nullptr;
           }
-          ITT_TASK_BEGIN(fetch_decode_module_behavior, instructionFinished);
+          //ITT_TASK_BEGIN(fetch_decode_module_behavior, instructionFinished);
           instructionLevelParallelism.instructionFinished(current_pair);
-          ITT_TASK_END(instructionFinished);
+          //ITT_TASK_END(instructionFinished);
           SCMULATE_INFOMSG(5, "Marking instruction %s for decomision", current_pair->first->getFullInstruction().c_str());
           current_pair->second = instruction_state::DECOMMISSION;
-          TIMERS_COUNTERS_GUARD(
-            this->time_cnt_m->addEvent(this->su_timer_name, SU_IDLE, current_pair->first->getFullInstruction()););
+          //TIMERS_COUNTERS_GUARD(
+            //this->time_cnt_m->addEvent(this->su_timer_name, SU_IDLE, current_pair->first->getFullInstruction()););
           break;
         case instruction_state::EXECUTING:
           executing++;
@@ -347,15 +350,15 @@ int scm::fetch_decode_module::tickBehavior()
     }
 
     // Check if any instructions have finished
-    instructionLevelParallelism.printStats();
-    SCMULATE_INFOMSG(6, "%lu\t%lu\t%lu\t%lu\t%lu\t%lu\t%lu\n", stall, waiting, ready, execution_done, executing, decomision, this->inst_buff_m.getBufferSize());
+    //instructionLevelParallelism.printStats();
+    //SCMULATE_INFOMSG(6, "%lu\t%lu\t%lu\t%lu\t%lu\t%lu\t%lu\n", stall, waiting, ready, execution_done, executing, decomision, this->inst_buff_m.getBufferSize());
     // Clear out instructions that are decomissioned
     this->inst_buff_m.clean_out_queue();
 
-  }
-  SCMULATE_INFOMSG(1, "Shutting down fetch decode unit");
-  TIMERS_COUNTERS_GUARD(
-      this->time_cnt_m->addEvent(this->su_timer_name, SU_END););
+  //} // while alive sig
+  //SCMULATE_INFOMSG(1, "Shutting down fetch decode unit");
+  //TIMERS_COUNTERS_GUARD(
+      //this->time_cnt_m->addEvent(this->su_timer_name, SU_END););
   return 0;
 }
 
@@ -777,6 +780,5 @@ bool scm::fetch_decode_module::gemAttemptAssignExecuteInstruction(scm::instructi
   SCMULATE_INFOMSG_IF(5, !sched, "Could not find a free unit");
   return sched;
    */
-  // TODO: replace false with a call to an SU function that will handle it based on the instruction state pair
-  return(false);
+  return(owner->pushFromFD(inst));
 }

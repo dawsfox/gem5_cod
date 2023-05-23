@@ -77,8 +77,8 @@ class Codelet {
  */
 
 // define a tester function here
-void helloCodFire();
-void helloCodFireTwo();
-void helloCodFireThree();
+void helloCodFire(void * dest, void * src1, void * src2);
+void helloCodFireTwo(void * dest, void * src1, void * src2);
+void helloCodFireThree(void * dest, void * src1, void * src2);
 
 #endif

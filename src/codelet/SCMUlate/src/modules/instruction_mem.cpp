@@ -48,8 +48,9 @@ scm::inst_mem_module::loader(const char* filename) {
     return true;
 }
 
-scm::inst_mem_module::inst_mem_module(const char * filename, reg_file_module * const reg_file_m):
-  reg_file_m(reg_file_m) {
+scm::inst_mem_module::inst_mem_module(const char * filename, reg_file_module * const reg_file_m, gem5::SU * owner):
+  reg_file_m(reg_file_m),
+  owner(owner) {
   SCMULATE_INFOMSG(3, "CREATING INSTRUCTION MEMORY");
   this->is_valid = true;
   // Open the file, if specified, otherwise read from stdio

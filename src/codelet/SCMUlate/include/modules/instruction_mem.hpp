@@ -13,7 +13,14 @@
 #include <fstream>
 #include <iostream>
 
+namespace gem5 {
+  class SU; //forward declaration so we can have a pointer; instruction mem needs to be able
+  // to access the codelet mapping so it can set fire functions. Can't include the file because
+  // SU.hh includes this file -- circular dependency
+}
+
 namespace scm {
+
   /* This module corresponds to the instruction memory, it is in charge 
    * of reading the file that contains the program, or read the program 
    * directly from the user input. It uses the instructions class to 
@@ -28,6 +35,7 @@ namespace scm {
       std::vector<decoded_instruction_t*> memory;
       std::map<std::string, int> labels;
       reg_file_module * reg_file_m;
+      gem5::SU * owner;
 
       /* This flag checks if the file that is received is a valid flag
        * otherwise it should set it to stop running the machine
@@ -45,7 +53,7 @@ namespace scm {
     public:
       inst_mem_module() = delete;
       //inst_mem_module(char * filename, reg_file_module * const reg_file_m);
-      inst_mem_module(const char * filename, reg_file_module * const reg_file_m);
+      inst_mem_module(const char * filename, reg_file_module * const reg_file_m, gem5::SU * owner);
   
       /* This method allows to fetch an instruction from the instruction 
        * memory by passing the address (PC)
@@ -68,6 +76,8 @@ namespace scm {
 
       inline uint32_t getMemSize() { return this->memory.size(); }
       inline reg_file_module* getRegisterFileModule() {return this->reg_file_m; }
+
+      gem5::SU * getOwner() { return this->owner; }
 
       /* This method allows to dump the content of the instruction 
        * memory for debugging

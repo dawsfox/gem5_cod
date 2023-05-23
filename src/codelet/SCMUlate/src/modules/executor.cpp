@@ -67,6 +67,7 @@ int scm::cu_executor_module::codeletExecutor() {
     scm::decoded_instruction_t * curInstruction = myExecutor->getHead()->first;
     scm::codelet * curCodelet = curInstruction->getExecCodelet();
     curCodelet->setExecutor(this);
-    curCodelet->implementation();
+    // removing implementation because changing the way codelets are organized/executed
+    //curCodelet->implementation();
     return 0;
 }

@@ -77,8 +77,12 @@ namespace scm {
               type(other.type), opcode(other.opcode), instruction(other.instruction), op1_s(other.op1_s), op2_s(other.op2_s), op3_s(other.op3_s), op_in_out(other.op_in_out),cod_exec(nullptr), op1(other.op1), op2(other.op2), op3(other.op3), memRanges(other.memRanges), inst_operand_dir(other.inst_operand_dir) {
                 if (other.cod_exec != nullptr) {
                   codelet_params newParams = other.cod_exec->getParams();
-                  this->cod_exec = codeletFactory::createCodelet(getInstruction(), newParams);
-                  this->cod_exec->setMemoryRange(&memRanges);
+                  cod_exec = new codelet(3, newParams, scm::OP_IO::OP1_WR | scm::OP_IO::OP2_RD | scm::OP_IO::OP3_RD);
+                  cod_exec->setMemoryRange(&memRanges);
+                  // don't forget to copy over the fire function; if they're the same codelet they have the same one
+                  cod_exec->setFireFunc(other.cod_exec->getFireFunc());
+                  //this->cod_exec = codeletFactory::createCodelet(getInstruction(), newParams);
+                  //this->cod_exec->setMemoryRange(&memRanges);
                 }
               }
       // Getters and setters

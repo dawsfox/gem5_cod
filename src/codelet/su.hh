@@ -11,7 +11,8 @@
 #include "codelet/SCMUlate/include/modules/control_store.hpp"
 #include "codelet/SCMUlate/include/modules/instruction_mem.hpp"
 #include "codelet/SCMUlate/include/modules/register.hpp"
-#include <queue>
+//#include <queue>
+#include <list>
 
 namespace gem5
 {
@@ -171,14 +172,12 @@ class SU : public ClockedObject
 
     // Loads the Codelets from the user space program
     // they are located in a specifically namd elf section
-    void getCodelets();
+    // return number of codelets retrieved
+    unsigned getCodelets();
     
-    // builds full codelet structs based on the info from user codelets
-    // and the actual SCM program
-    void analyzeProgram();
-
-    // parses line of the SCM program and sets register dependencies
-    void getRegs(std::string progLine);
+    // reads root address of register space for CU runtime from elf section
+    // and sets regSpace
+    unsigned char * readRegSpacePtr();
 
     /* SCM modules go here; they will handle behavior based on the SCM
      * program. Fetch decode module is used to schedule instructions 
@@ -189,16 +188,20 @@ class SU : public ClockedObject
      * Codelets finishing will be triggered when a codelet retirement
      * request comes from the CodeletInterface */
 
-    scm::reg_file_module regFile; // needed to created instructionMem
-    scm::control_store_module controlStore;
-    scm::inst_mem_module instructionMem; // needed for fetchDecode. Will take regFile and scmFileName
+    //scm::reg_file_module regFile; // needed to created instructionMem; will take root pointer
+    //scm::control_store_module controlStore;
+    //scm::inst_mem_module instructionMem; // needed for fetchDecode. Will take regFile and scmFileName
+    scm::reg_file_module * regFile; // needed to created instructionMem; will take root pointer
+    scm::control_store_module * controlStore;
+    scm::inst_mem_module * instructionMem; // needed for fetchDecode. Will take regFile and scmFileName
 
     /* Try to pass controlStore as nullptr to fetchDecode if possible, because we will replace the
      * mechanisms for execution that it provides. Alternatively, could alter the controlStore to 
      * provide the functionality we want. That would probably be better coding practice */
     // ilpMode can be: SEQUENTIAL, SUPERSCALAR, OOO
     scm::ILP_MODES ilpMode;
-    scm::fetch_decode_module fetchDecode;
+    //scm::fetch_decode_module fetchDecode;
+    scm::fetch_decode_module * fetchDecode;
 
     //std::string scmFileName;
     const char * scmFileName;
@@ -206,7 +209,7 @@ class SU : public ClockedObject
     // event used to perform tasks and advance cycles
     EventFunctionWrapper tickEvent;
 
-    codelet_t finalCod = {(fire_t)0xffffffffffffffff, 0,0,0,0}; //final codelet definition
+    codelet_t finalCod = {(fire_t)0xffffffffffffffff, 0,0,0,0, "finalCodelet"}; //final codelet definition
 
     bool aliveSig;
 
@@ -239,11 +242,14 @@ class SU : public ClockedObject
     /// For tracking the miss latency
     Tick missTime;
 
-    // FIFO codelet queue
-    std::queue<codelet_t> codQueue;
+    std::list<scm::decoded_instruction_t> executingInsts;
 
     // Size should probably be made a SU param later
-    codelet_t codSpace[32];
+    // honestly will probably be able to get rid of this later
+    runt_codelet_t codSpace[32];
+    std::map<std::string, fire_t> codMapping;
+
+    unsigned char * regSpace = nullptr;
 
     /// SU statistics
   protected:
@@ -257,9 +263,9 @@ class SU : public ClockedObject
 
   public:
 
-    // temporary, remove when no longer needed
-    bool sendRequestExt(codelet_t *toSend, Addr dest);
-    void scheduleRequestExt(codelet_t *toSend, Addr dest, Cycles latency);
+    // function for fetch decode unit to call when it needs to push a codelet
+    bool pushFromFD(scm::instruction_state_pair *inst_pair);
+    fire_t getCodeletFire(std::string codName);
 
     // trying this; SU is not sending range change on startup....
     void init() override;

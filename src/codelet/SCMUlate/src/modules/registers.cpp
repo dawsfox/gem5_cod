@@ -14,6 +14,21 @@ scm::reg_file_module::reg_file_module() {
   this->checkRegisterConfig();
 }
 
+scm::reg_file_module::reg_file_module(register_file_t *reg_file) {
+  SCMULATE_INFOMSG(3, "Initializing Register file with root pointer");
+  this->reg_file = reg_file; //set reg file to start at location in emulated CU runtime
+  // Initialize the memory that represents the register file to zero
+  /*
+  for (int i = 0; i < REG_FILE_SIZE_KB*1000 ; ++ i) {
+    reg_file->space[i] = 0;
+  }
+  */
+  // if register file is located in emulated CU runtime address space,
+  // does not need to be and cannot be initialized
+  this->describeRegisterFile();
+  this->checkRegisterConfig();
+}
+
 void 
 scm::reg_file_module::describeRegisterFile() {
   SCMULATE_INFOMSG(0, "REGISTER FILE DEFINITION");

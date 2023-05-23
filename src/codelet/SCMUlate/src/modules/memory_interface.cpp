@@ -23,7 +23,8 @@ void
 scm::mem_interface_module::executeMemoryCodelet() {
     scm::codelet * curCodelet = myInstructionSlot->getExecCodelet();
     curCodelet->setExecutor(this->executorModule);
-    curCodelet->implementation();
+    // commented out because changing the way codelets are organized/executed
+    //curCodelet->implementation();
 }
 void
 

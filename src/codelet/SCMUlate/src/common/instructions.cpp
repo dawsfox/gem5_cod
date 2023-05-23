@@ -2,6 +2,7 @@
 //#include "instruction_mem.hpp"
 #include "codelet/SCMUlate/include/common/instructions.hpp"
 #include "codelet/SCMUlate/include/modules/instruction_mem.hpp"
+#include "codelet/su.hh"
 
 // TODO: update all the functions to use getOpStr and getOp instead of the static op num
 //       to allow expansion in the future with multiple number of operands
@@ -52,8 +53,11 @@ namespace scm {
             }
           }
 
-          cod_exec = scm::codeletFactory::createCodelet(this->getInstruction(), newArgs);
+          //cod_exec = scm::codeletFactory::createCodelet(this->getInstruction(), newArgs);
+          // for now hardcode number of params as 3; also hardcoding the IO right now
+          cod_exec = new codelet(3, newArgs, scm::OP_IO::OP1_WR | scm::OP_IO::OP2_RD | scm::OP_IO::OP3_RD);
           cod_exec->setMemoryRange(&this->memRanges);
+          cod_exec->setFireFunc((void *)inst_memory->getOwner()->getCodeletFire(this->getInstruction()));
           if (cod_exec == nullptr) 
             return false;
           for (uint32_t op_num = 1; op_num <= MAX_NUM_OPERANDS; op_num++) {

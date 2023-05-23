@@ -2,6 +2,7 @@
 #include "debug/SU.hh"
 #include "debug/SULoader.hh"
 #include "debug/SUCod.hh"
+#include "debug/SUSCM.hh"
 #include "sim/system.hh"
 #include "sim/process.hh"
 #include "base/loader/elf_object.hh"
@@ -15,7 +16,7 @@
 namespace gem5
 {
 
-void
+unsigned
 SU::getCodelets()
 {
     ThreadContext *tmp_context = system->threads[0];
@@ -55,17 +56,24 @@ SU::getCodelets()
         DPRINTF(SULoader, "Codelet list located at %p with %u codelets\n", codelet_list, codelet_count);
         DPRINTF(SULoader, "size of user codelet: %u\n", sizeof(user_codelet_t));
         for (int i=0; i<codelet_count; i++) {
-            codelet_t *localCod = (codelet_t *) malloc(sizeof(codelet_t));
+            //runt_codelet_t *localCod = (runt_codelet_t *) malloc(sizeof(runt_codelet_t));
             //memcpy(localCod, &(codelet_program[i]), sizeof(codelet_t));
-            strcpy(localCod->name, codelet_list[i].name);
-            localCod->fire = codelet_list[i].fire;
+            //strcpy(localCod->name, codelet_list[i].name);
+            //localCod->fire = codelet_list[i].fire;
             DPRINTF(SULoader, "codelet %d is at address %p in elf\n", i, &(codelet_list[i]));
-            DPRINTF(SULoader, "real codelet is: %p - %s\n", (void *)localCod->fire, localCod->name);
+            DPRINTF(SULoader, "codelet is: %p - %s\n", (void *)codelet_list[i].fire, codelet_list[i].name);
             //DPRINTF(SULoader, "real codelet is: %p %x %x %x %x\n", (void *)localCod->fire, localCod->dest, localCod->src1, localCod->src2, localCod->id);
             //codQueue.push(*localCod);
-            codSpace[i] = *localCod;
-            free(localCod);
+            //codSpace[i] = *localCod;
+            //free(localCod);
+            char codName[32];
+            strcpy(codName, codelet_list[i].name);
+            std::string codStringName(codName);
+            // copying name from elf and then mapping it to the fire function in the SU::codMapping
+            codMapping[codStringName] = (fire_t) codelet_list[i].fire;
+            DPRINTF(SULoader, "loaded user codelet mapping: %s - %p\n", codStringName.data(), (void *)codMapping[codStringName]);
         }
+        return(codelet_count);
         /*
         //for test printing
         long unsigned * printable_program = (long unsigned *) prog_data->d_buf;
@@ -75,18 +83,64 @@ SU::getCodelets()
         }
         */ 
     }
-
+    return(0);
 }
 
-void
-SU::getRegs(std::string progLine)
+fire_t
+SU::getCodeletFire(std::string codName)
 {
-
+    fire_t tmp = codMapping[codName];
+    if (!tmp) {
+      for(auto it = codMapping.cbegin(); it != codMapping.cend(); ++it)
+      {
+        SCMULATE_INFOMSG(3, "Codelet %s at %p", it->first.c_str(), (void *) it->second);
+      }
+        SCMULATE_ERROR(0, "Fire function requested from SU for codelet %s not found", codName.c_str());
+    }
+    return(tmp);
 }
 
-void
-SU::analyzeProgram()
+unsigned char *
+SU::readRegSpacePtr()
 {
+    ThreadContext *tmp_context = system->threads[0];
+    loader::ObjectFile *tmp_obj = tmp_context->getProcessPtr()->objFile;
+    loader::ElfObject *elfObject = dynamic_cast<loader::ElfObject *>(tmp_obj);
+    //DPRINTF(SULoader, "elfObject has address %p\n", elfObject);
+    Elf * real_elf = elfObject->getElf();
+    //DPRINTF(SULoader, "real elf has address %p\n", real_elf);
+    // we added getElf so we can go grab the Codelet section
+    size_t string_index;
+    // get index of string table so we can find section names
+    elf_getshdrstrndx(real_elf, &string_index);
+    //DPRINTF(SULoader, "string table is at section %u\n", string_index);
+    Elf_Scn *section = elf_getscn(real_elf, 1);
+    //DPRINTF(SULoader, "first section is at %p\n", section);
+    bool program_found = false;
+    for (int sec_idx = 1; section; section = elf_getscn(real_elf, ++sec_idx)) {
+        GElf_Shdr shdr;
+        gelf_getshdr(section, &shdr);
+        // sh_name is the index in the string table where name is located, so check it in string table
+        // Return pointer to string at OFFSET in section INDEX.
+        char * section_name = elf_strptr(real_elf, string_index, shdr.sh_name);
+        //DPRINTF(SULoader, "checking section %s\n", section_name);
+        // if section name is .codelet_program
+        if (!strcmp(section_name, ".register_space_ptr")) {
+            DPRINTF(SULoader, "section %s FOUND\n", section_name);
+            program_found = true;
+            break;
+        }    
+    }
+    if (program_found) {
+        Elf_Data *prog_data = elf_getdata(section, NULL);
+        unsigned char ** reg_space_root =  (unsigned char **) prog_data->d_buf;
+        unsigned char * reg_space_root_ptr = reg_space_root[0];
+        //DPRINTF(SULoader, "Register space root located at %p; points to runtime space %p\n", prog_data->d_buf, reg_space_root_ptr);
+        // program REALLY hates printing reg_space_root_ptr as %p for some reason. it breaks the printing....
+        DPRINTF(SULoader, "register space starts at: %x\n", (long unsigned)reg_space_root_ptr);
+        return(reg_space_root_ptr);
+    }
+    return(nullptr);
 
 }
 
@@ -175,6 +229,7 @@ SU::accessFunctional(PacketPtr pkt)
     // when the SU pushes to the queue as well. it's fine for now...
     panic_if(!pkt->isRead(), "CPU should not do anything to queue space but read it");
     // pop codelet and return
+    /*
     if (!codQueue.empty()) {
         codelet_t toPop = codQueue.front(); //get next Codelet up
         codQueue.pop(); // remove it from the queue
@@ -195,6 +250,8 @@ SU::accessFunctional(PacketPtr pkt)
     else {
         return(false);
     }
+    */
+    return(false);
 
 }
 
@@ -300,17 +357,6 @@ SU::handleResponse(PacketPtr pkt)
     // just release block
     reqBlocked = false;
 
-    // for now, hardcode immediately scheduling a new codelet push
-    /*
-    if (codQueue.size() > 0) {
-        Addr interface_addr(0x90000000);
-        Cycles latency_scale(2000); //hardcoded hopefully high enough to not be blocked
-        codelet_t * toSend = (codelet_t *) malloc(sizeof(codelet_t));
-        *toSend = codQueue.front();
-        codQueue.pop();
-        scheduleRequestExt(toSend, interface_addr, sigLatency);
-    }
-     */
 
     return true;
 }
@@ -397,6 +443,51 @@ SU::sendRequest(codelet_t *toPush, Addr dest)
     return(true);
 }
 
+bool
+SU::pushFromFD(scm::instruction_state_pair *inst_pair)
+{
+    // take instruction state pair and turn into a runtime codelet
+    scm::decoded_instruction_t * inst = inst_pair->first;
+    // first, to simplify we assume no immediates
+    // second, this is only called from the fetch decode for execute instructions,
+    // i.e. codelets, so we can assume ->instruction is the codelet name
+    //char * codName = (char *) inst->getInstruction().data();
+    std::string codName = inst->getInstruction();
+    scm::codelet * scmCod = inst->getExecCodelet(); 
+    DPRINTF(SUSCM, "Try to push codelet %s from fetch decode call\n", codName);
+    void * dest = nullptr;
+    void * src1 = nullptr;
+    void * src2 = nullptr;
+    // code belowed adapted from decoded_instruction_t::decodeOperands
+    for (uint32_t op_num = 1; op_num <= MAX_NUM_OPERANDS; op_num++) {
+        std::string & opStr = inst->getOpStr(op_num);
+        DPRINTF(SUSCM, "Reading operand: %s\n", opStr.data());
+        scm::operand_t & op = inst->getOp(op_num);
+        if (scm::instructions::isRegister(opStr)) {
+            // REGISTER REGISTER ADD CASE
+            op.value.reg.reg_ptr = regFile->getRegisterByName(op.value.reg.reg_size, op.value.reg.reg_number);
+            if (op_num == 1) {
+                dest = (void *) op.value.reg.reg_ptr;
+            } else if (op_num == 2) {
+                src1 = (void *) op.value.reg.reg_ptr;
+            } else if (op_num == 3) {
+                src2 = (void *) op.value.reg.reg_ptr;
+            }
+        } 
+    }
+    if (!dest || !src1 || !src2) {
+        DPRINTF(SUSCM, "operands missing for codelet %s\n", codName);
+        return(false);
+    }
+    runt_codelet_t toPush = {(fire_t)scmCod->getFireFunc(), dest, src1, src2, *(codName.data())};
+    DPRINTF(SUSCM, "Runtime codelet built: %p\t%p\t%p\t%p\t%s\n", scmCod->getFireFunc(), dest, src1, src2, codName.data());
+    // for now we're gonna make sure the names are correct and pretend it executed
+    // don't forget we also need to implement codelet retirement
+    inst_pair->second = scm::instruction_state::EXECUTION_DONE;
+    return(true);
+
+}
+
 // -------------------------------------------------------------------------
 
 void
@@ -443,8 +534,21 @@ void
 SU::init()
 {
     sendRangeChange();    
-    getCodelets();
-    analyzeProgram();
+    // set reg space to correct address in runtime address spaced based on ELF section
+    regSpace = readRegSpacePtr();
+    // analyze elf section data to get user codelets, they will be used 
+    // by inst_mem to set scm::codelets' fire functions based on users'
+    unsigned count = getCodelets();
+    // Initialize scm modules
+    controlStore = new scm::control_store_module(1);
+    regFile = new scm::reg_file_module((scm::register_file_t *)regSpace);
+    instructionMem = new scm::inst_mem_module(scmFileName, regFile, this);
+    fetchDecode = new scm::fetch_decode_module(instructionMem, controlStore, &aliveSig, ilpMode, this);
+    /* TODO: change SU fields that are scm modules to be pointers to the SCM modules
+     * We have to do this because the register file needs to be instantiated when the
+     * SU already has gotten the root point of the register file from the ELF file. This
+     * means that we cannot construct the register file module at the same time, which 
+     * unfortunately implies we need to wait to construct everything else as well. */
 }
 
 void
@@ -463,6 +567,7 @@ SU::tick()
     // in the codelet space that should go to the queue
     /* no local codelet space setup yet so lets ignore first part */
     // then should push out codelets from the queue -- one per tick?
+    /*
     if (!codQueue.empty() && !reqBlocked) {
         Addr interface_addr(0x90000000);
         codelet_t * localCod = (codelet_t *) malloc(sizeof(codelet_t));
@@ -478,6 +583,8 @@ SU::tick()
         sendRequest(&finalCod, interface_addr);
         aliveSig = false;
     }
+    */
+    fetchDecode->tickBehavior();
     if (aliveSig) {
         schedule(tickEvent, clockEdge(Cycles(1)));
     }
@@ -485,10 +592,10 @@ SU::tick()
 
 SU::SU(const SUParams &params) :
     ClockedObject(params),
-    controlStore(1),
-    instructionMem(params.scm_file_name.data(), &regFile),
+    //controlStore(1),
+    //instructionMem(params.scm_file_name.data(), &regFile),
     ilpMode(scm::SEQUENTIAL),
-    fetchDecode(&instructionMem, &controlStore, &aliveSig, ilpMode, this),
+    //fetchDecode(&instructionMem, &controlStore, &aliveSig, ilpMode, this),
     scmFileName(params.scm_file_name.data()),
     tickEvent([this]{ tick(); }, "SU tick",
                 false, Event::CPU_Tick_Pri),
