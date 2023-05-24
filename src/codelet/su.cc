@@ -423,7 +423,7 @@ SU::CodSideReqPort::recvReqRetry()
 
 
 bool
-SU::sendRequest(codelet_t *toPush, Addr dest)
+SU::sendRequest(runt_codelet_t *toPush, Addr dest)
 {
     DPRINTF(SU, "Pushing codelet to interface with addr %#x\n", dest);
     if (reqBlocked) { //can't send if already being used
@@ -436,9 +436,9 @@ SU::sendRequest(codelet_t *toPush, Addr dest)
     // need to make a request object first to pass to the packet
     // let's say the SU has requestor ID 55..... if not, make it invalid somehow
     Request::Flags reqFlags(Request::UNCACHEABLE | Request::PHYSICAL);
-    const RequestPtr codReq = std::shared_ptr<Request>(new Request(dest, sizeof(codelet_t), reqFlags, 55));
+    const RequestPtr codReq = std::shared_ptr<Request>(new Request(dest, sizeof(runt_codelet_t), reqFlags, 55));
     PacketPtr codPkt = Packet::createWrite(codReq);
-    codPkt->dataStatic<codelet_t>(toPush);
+    codPkt->dataStatic<runt_codelet_t>(toPush);
     codReqPort.sendPacket(codPkt);
     return(true);
 }
@@ -479,12 +479,44 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
         DPRINTF(SUSCM, "operands missing for codelet %s\n", codName);
         return(false);
     }
-    runt_codelet_t toPush = {(fire_t)scmCod->getFireFunc(), dest, src1, src2, *(codName.data())};
-    DPRINTF(SUSCM, "Runtime codelet built: %p\t%p\t%p\t%p\t%s\n", scmCod->getFireFunc(), dest, src1, src2, codName.data());
-    // for now we're gonna make sure the names are correct and pretend it executed
+    runt_codelet_t tmp; // = {(fire_t)scmCod->getFireFunc(), dest, src1, src2, nullptr)};
+    tmp.fire = (fire_t) scmCod->getFireFunc();
+    tmp.dest = dest;
+    tmp.src1 = src1;
+    tmp.src2 = src2;
+    strcpy(tmp.name, codName.data());
+    // TODO: add a way to make sure this gets freed at some point
+    runt_codelet_t * toPush = (runt_codelet_t *) malloc(sizeof(runt_codelet_t));
+    memcpy(toPush, &tmp, sizeof(runt_codelet_t));
+    DPRINTF(SUSCM, "Runtime codelet built: %p\t%p\t%p\t%p\t%s\n", (void *)tmp.fire, tmp.dest, tmp.src1, tmp.src2, tmp.name);
+    // send to CodeletInterface
     // don't forget we also need to implement codelet retirement
-    inst_pair->second = scm::instruction_state::EXECUTION_DONE;
-    return(true);
+    Addr interface_addr(0x90000000);
+    if(sendRequest(toPush, interface_addr)) {
+        inst_pair->second = scm::instruction_state::EXECUTION_DONE;
+        return(true);
+    } else {
+        return(false);
+    }
+
+}
+
+bool
+SU::commitFromFD()
+{
+    // TODO: add a way to make sure this gets freed at some point
+    runt_codelet_t * toPush = (runt_codelet_t *) malloc(sizeof(runt_codelet_t));
+    // since commit has been called, we send out the finalCod to turn off the CU runtime
+    memcpy(toPush, &finalCod, sizeof(runt_codelet_t));
+    DPRINTF(SUSCM, "Sending final codelet: %p\t%s\n", (void *)toPush->fire, toPush->name);
+    // send to CodeletInterface
+    // don't forget we also need to implement codelet retirement
+    Addr interface_addr(0x90000000);
+    if(sendRequest(toPush, interface_addr)) {
+        return(true);
+    } else {
+        return(false);
+    }
 
 }
 
@@ -584,8 +616,16 @@ SU::tick()
         aliveSig = false;
     }
     */
-    fetchDecode->tickBehavior();
+    // only tick the FD when it hasn't reached COMMIT yet
     if (aliveSig) {
+        fetchDecode->tickBehavior();
+    } 
+    // keep trying to send the final codelet until it succeeds to close CU runtime
+    else if (commitFromFD()) {
+        finalCodSent = true;
+    }
+    // keep ticking if fetchDecode is still active or we haven't yet closed the CU runtime
+    if (aliveSig || !finalCodSent ) {
         schedule(tickEvent, clockEdge(Cycles(1)));
     }
 }
@@ -615,6 +655,12 @@ SU::SU(const SUParams &params) :
         // again unsure of the param name ...
         codRespPorts.emplace_back(name() + csprintf(".cod_side_resp_ports[%d]", i), i, this);
     }
+    //= {(fire_t)0xffffffffffffffff, 0,0,0,0, "finalCodelet"}; //final codelet definition
+    finalCod.fire = (fire_t)0xffffffffffffffff;
+    finalCod.dest = nullptr;
+    finalCod.src1 = nullptr;
+    finalCod.src2 = nullptr;
+    strcpy(finalCod.name, "finalCodelet");
     DPRINTF(SULoader, "SCM Program loaded from %s", scmFileName);
 }
 

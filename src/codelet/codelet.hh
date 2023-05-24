@@ -17,7 +17,6 @@ class Codelet
 }; //class Codelet
 */
 
-//typedef void (*fire_t)();
 typedef void (*fire_t)(void * dest, void * src1, void * src2);
 
 typedef struct user_codelet_s {

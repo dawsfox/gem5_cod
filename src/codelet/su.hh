@@ -163,7 +163,7 @@ class SU : public ClockedObject
     bool accessFunctional(PacketPtr pkt);
 
     // used to push Codelets out to CUs
-    bool sendRequest(codelet_t *toPush, Addr dest);
+    bool sendRequest(runt_codelet_t *toPush, Addr dest);
 
     /**
      * Tell the CPU side to ask for our memory ranges.
@@ -209,9 +209,10 @@ class SU : public ClockedObject
     // event used to perform tasks and advance cycles
     EventFunctionWrapper tickEvent;
 
-    codelet_t finalCod = {(fire_t)0xffffffffffffffff, 0,0,0,0, "finalCodelet"}; //final codelet definition
+    runt_codelet_t finalCod; 
 
     bool aliveSig;
+    bool finalCodSent = false;
 
     // Params
     System * system;
@@ -265,6 +266,8 @@ class SU : public ClockedObject
 
     // function for fetch decode unit to call when it needs to push a codelet
     bool pushFromFD(scm::instruction_state_pair *inst_pair);
+    // function for fetch decode unit to call when commit instruction is reached
+    bool commitFromFD();
     fire_t getCodeletFire(std::string codName);
 
     // trying this; SU is not sending range change on startup....

@@ -229,13 +229,13 @@ class CodeletInterface : public ClockedObject
      *
      * @param packet to functionally handle
      */
-    void handleFunctional(PacketPtr pkt);
+    void handleFunctional(PacketPtr pkt, int port_id);
 
     /**
      * Access the cache for a timing access. This is called after the cache
      * access latency has already elapsed.
      */
-    void accessTiming(PacketPtr pkt);
+    void accessTiming(PacketPtr pkt, int port_id);
 
     /**
      * This is where we actually update / read from the cache. This function
@@ -243,7 +243,7 @@ class CodeletInterface : public ClockedObject
      *
      * @return true if a hit, false otherwise
      */
-    bool accessFunctional(PacketPtr pkt);
+    bool accessFunctional(PacketPtr pkt, int port_id);
 
     /**
      * Insert a block into the cache. If there is no room left in the cache,
@@ -316,7 +316,15 @@ class CodeletInterface : public ClockedObject
     Tick missTime;
 
     /// FIFO Codelet queue
-    std::queue<codelet_t> codQueue;
+    std::queue<runt_codelet_t> codQueue;
+
+    // unsigned but functions as bool
+    // gives the CPU a flag to check if there's a codelet
+    unsigned codeletAvailable = 0;
+
+    // a staging location for the CPU to be able to read multiple fields 
+    // as much as it wants until the codelet is retired
+    runt_codelet_t activeCodelet = {nullptr, nullptr, nullptr, nullptr, ""};
 
     /// CodeletInterface statistics
   protected:

@@ -116,6 +116,12 @@ namespace scm {
        */
       inline bool gemAttemptAssignExecuteInstruction(instruction_state_pair * inst);
 
+      /** \brief calls gem5::SU function to signal program is ending to send final codelet
+       *
+       *  We make a call upwards to the SU indicating COMMIT instruction has been reached
+       */
+      inline bool gemAttemptAssignCommit();
+
       /** \brief get the SU number
        *
        *  We select a CU and we assign a new codelet to it. When it is done, we delete the codelet

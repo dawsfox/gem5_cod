@@ -290,6 +290,8 @@ int scm::fetch_decode_module::tickBehavior()
             case COMMIT:
               SCMULATE_INFOMSG(4, "Scheduling and Exec a COMMIT");
               SCMULATE_INFOMSG(1, "Turning off machine alive = false");
+              gemAttemptAssignCommit();
+              // only kill machine and decomision instruction if SU accepts the commit call
               *(this->aliveSignal) = false;
               // Properly clear the COMMIT instruction
               current_pair->second = instruction_state::DECOMMISSION;
@@ -763,22 +765,10 @@ bool scm::fetch_decode_module::attemptAssignExecuteInstruction(scm::instruction_
 bool scm::fetch_decode_module::gemAttemptAssignExecuteInstruction(scm::instruction_state_pair *inst)
 {
   // for now, this will invoke a call to the SU
-  /*
-  static uint32_t curSched = 0;
-  bool sched = false;
-  uint32_t attempts = 0;
-  // We try scheduling on all the sched units
-  while (!sched && attempts++ < this->ctrl_st_m->numExecutors()) {
-    if (this->ctrl_st_m->get_executor(curSched)->try_insert(inst)) {
-      sched = true;
-    } else {
-      curSched++;
-      curSched %= this->ctrl_st_m->numExecutors();
-    }
-  }
-  SCMULATE_INFOMSG_IF(5, sched, "Scheduling to CUMEM %d", curSched);
-  SCMULATE_INFOMSG_IF(5, !sched, "Could not find a free unit");
-  return sched;
-   */
   return(owner->pushFromFD(inst));
+}
+
+bool scm::fetch_decode_module::gemAttemptAssignCommit()
+{
+  return(owner->commitFromFD());
 }

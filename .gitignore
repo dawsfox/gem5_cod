@@ -34,5 +34,6 @@ configs/dram/lowp_sweep.cfg
 .vscode
 tests/test-progs/codelet/bin/*
 src/codelet/SCMUlate/src/*/*.o
+src/codelet/SCMUlate/src/*/*.do
 src/codelet/SCMUlate/src/*/*.txt
 src/codelet/SCMUlate/todo.md

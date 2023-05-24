@@ -13,34 +13,7 @@
 namespace gem5
 {
 
-// let's hardcode some function names here;
-//_Z12helloCodFirev (from nm)
-//std::string test_fire = "helloCodFire";
-std::string test_fire = "_Z12helloCodFirev";
-
-/*
-void pushCod(System *system, std::queue<codelet_t> *codQueue)
-{
-    ThreadContext *tmp_context = system->threads[0];
-    loader::ObjectFile *tmp_obj = tmp_context->getProcessPtr()->objFile;
-    loader::SymbolTable tmp_sym = tmp_obj->symtab();
-    auto sym_it = tmp_sym.find(test_fire);
-    if (sym_it != tmp_sym.end()) {
-        // if sym found            
-        DPRINTF(CodeletInterfaceQueue, "symbol found: %lx\n", sym_it->address);
-        codelet_t testCod = {(fire_t)sym_it->address, (unsigned) 1};
-        for (int i=0; i<30; i++) {
-            codQueue->push(testCod);
-        }
-    } else {
-        DPRINTF(CodeletInterfaceQueue, "symbol not found :(\n");
-        DPRINTF(CodeletInterfaceQueue, "searched for %s : not found", test_fire);
-    }
-
-}
-*/
-
-#define CODELET_SIZE sizeof(codelet_t) 
+#define CODELET_SIZE sizeof(runt_codelet_t) 
 CodeletInterface::CodeletInterface(const CodeletInterfaceParams &params) :
     ClockedObject(params),
     queueLatency(params.queue_latency),
@@ -128,17 +101,17 @@ CodeletInterface::CPUSidePort::recvFunctional(PacketPtr pkt)
 {
     // Just forward to the interface
     // handleFunctional should decide whether to forward or do a queue operation
-    return owner->handleFunctional(pkt);
+    return owner->handleFunctional(pkt, 0);
 }
 
 
 void
-CodeletInterface::handleFunctional(PacketPtr pkt)
+CodeletInterface::handleFunctional(PacketPtr pkt, int port_id)
 {
     // Here we check address to see if a queue interaction is needed
     Addr reqAddr = pkt->getAddr();
     if (queueRange.contains(reqAddr)) {
-        if(accessFunctional(pkt)) {
+        if(accessFunctional(pkt, port_id)) {
             sendResponse(pkt);
             return;
         }
@@ -155,33 +128,68 @@ CodeletInterface::handleFunctional(PacketPtr pkt)
 }
 
 bool
-CodeletInterface::accessFunctional(PacketPtr pkt)
+CodeletInterface::accessFunctional(PacketPtr pkt, int port_id)
 {
-    // this should be moved somewhere else; accessFunctional will probably be called
-    // when the SU pushes to the queue as well. it's fine for now...
-    //panic_if(!pkt->isRead(), "CPU should not do anything to queue space but read it");
-    // pop codelet and return
-    DPRINTF(CodeletInterfaceQueue, "received packet with addr %x and is write: %d\n", pkt->getAddr(), pkt->isWrite());
-    if (!codQueue.empty() && pkt->isRead()) {
-        codelet_t toPop = codQueue.front(); //get next Codelet up
-        codQueue.pop(); // remove it from the queue
-        // how to put it in a packet?
+    // Read request: return whatever data the CPU is asking for based on the address
+    DPRINTF(CodeletInterfaceQueue, "received packet %s and is write: %d, portID = %d\n", pkt->print(), pkt->isWrite(), port_id);
+    if (pkt->isRead()) {
+        Addr reqAddr = pkt->getAddr(); // the address trying to be read
+        auto data = pkt->getPtr<uint8_t>(); // pointer to data field of the packet
+        if (reqAddr >= Addr(0x90000000) + sizeof(runt_codelet_t)) { // if requested address is not in the activeCodelet space
+            // CPU must be trying to read codeletAvailable flag
+            pkt->makeResponse();
+            std::memcpy(data, &codeletAvailable, pkt->getSize());
+            DPRINTF(CodeletInterfaceQueue, "CPU reading codeletAvailable flag = %x\n", codeletAvailable);
+            return(true);
+        }
+        assert(codeletAvailable != 0); // activeCodelet read should never come when available flag is false
+        runt_codelet_t toPop = activeCodelet; //get available codelet
         pkt->makeResponse();
-        auto data = pkt->getPtr<uint8_t>();
-        std::memcpy(data, &(toPop.fire), sizeof(fire_t));
-        //pkt->setSize(sizeof(codelet_t));
-        //pkt->setSize(sizeof(fire_t));
-        // no byte swapping, set new data
-        DPRINTF(CodeletInterfaceQueue, "popping Codelet from queue to send with fire %lx\n", (unsigned long) toPop.fire);
+        Addr codOffset = reqAddr - Addr(0x90000000); // offset of field requested
+        void * fieldPtr = (&activeCodelet) + codOffset; // pointer to data field requested
+        std::memcpy(data, fieldPtr, pkt->getSize()); //only copy data of size that was requested
+        DPRINTF(CodeletInterfaceQueue, "popping Codelet from queue to send: %lx %p %p %p %s\n", (unsigned long) toPop.fire, toPop.dest, toPop.src1, toPop.src2, toPop.name);
         return(true);
     }
-    else if (pkt->isWrite()) {
+    // InvalidPortID means that this write request is from the SU
+    // Meaning it is an attempt to push a Codelet to the CU
+    else if (pkt->isWrite() && port_id == InvalidPortID) {
         auto pkt_data = pkt->getPtr<uint8_t>();
-        codelet_t toPush;
-        std::memcpy(&toPush, pkt_data, sizeof(codelet_t));
-        codQueue.push(toPush);
+        runt_codelet_t toPush;
+        std::memcpy(&toPush, pkt_data, sizeof(runt_codelet_t));
+        // if no codelet staged, bypass queue, stage immeidately
+        // and set available flag
+        if (!codeletAvailable) {
+            DPRINTF(CodeletInterfaceQueue, "pushing Codelet to active: %lx %p %p %p %s\n", (unsigned long) toPush.fire, toPush.dest, toPush.src1, toPush.src2, toPush.name);
+            codeletAvailable = 1;
+            activeCodelet = toPush;
+        } else { //if already a codelet being used by CU, push this one to the queue
+            DPRINTF(CodeletInterfaceQueue, "pushing Codelet to queue: %lx %p %p %p %s\n", (unsigned long) toPush.fire, toPush.dest, toPush.src1, toPush.src2, toPush.name);
+            codQueue.push(toPush);
+        }
+        DPRINTF(CodeletInterfaceQueue, "making response for packet %s", pkt->print());
         pkt->makeResponse(); // with no data modification, because it was a write
-        DPRINTF(CodeletInterfaceQueue, "pushing Codelet from packet to queue\n");
+        DPRINTF(CodeletInterfaceQueue, "response made: %s\n", pkt->print());
+        return(true);
+    }
+    // A valid port ID means this request is from the CPU, and it is a write
+    // request so the CPU is retiring a Codelet -- the active Codelet
+    // Later we also need to forward this to the SU so fetchDecode can
+    // accurately retire the associated instruction, but for now we will just
+    // send a response
+    // TODO: forward this request to the SU after implementing CodReqPort here
+    // and CodRespPort in SU
+    else if (pkt->isWrite()) {
+        if (codQueue.empty()) { //if the queue is empty, no more codelets currently available
+            DPRINTF(CodeletInterfaceQueue, "CPU retiring Codelet; no more Codelets available\n");
+            codeletAvailable = 0;
+        } else { // if not, simply stage the next codelet from the queue
+            runt_codelet_t toPush = codQueue.front();
+            activeCodelet = toPush;
+            DPRINTF(CodeletInterfaceQueue, "CPU retiring Codelet; setting new activeCodelet\n");
+            codQueue.pop();
+        }
+        pkt->makeResponse();
         return(true);
     }
     else {
@@ -190,14 +198,14 @@ CodeletInterface::accessFunctional(PacketPtr pkt)
 }
 
 void
-CodeletInterface::accessTiming(PacketPtr pkt)
+CodeletInterface::accessTiming(PacketPtr pkt, int port_id)
 {
     // first do the access logic and check if it worked
-    if (accessFunctional(pkt)) {
+    if (accessFunctional(pkt, port_id)) {
         // managed to actually pop a codelet and modify packet
-        sendResponse(pkt); // send back to CPU 
+        sendResponse(pkt); // send back to origin port 
     } else {
-        // send response without changing; runtime should catch size isn't large enough to be a codelet
+        // send response without changing; runtime should check for null response
         pkt->makeResponse();
         auto data = pkt->getPtr<uint8_t>();
         auto size = pkt->getSize();
@@ -292,7 +300,7 @@ CodeletInterface::handleRequest(PacketPtr pkt, int port_id)
         return false;
     }
 
-    DPRINTF(CodeletInterface, "Got request for addr %#x\n", pkt->getAddr());
+    DPRINTF(CodeletInterface, "Got request %s\n", pkt->print());
 
     // This interface is now blocked waiting for the response to this packet.
     blocked = true;
@@ -307,7 +315,7 @@ CodeletInterface::handleRequest(PacketPtr pkt, int port_id)
     if (queueRange.contains(reqAddr)) {
         // Local queue access
         // Schedule an event after queue access latency to actually access
-        schedule(new EventFunctionWrapper([this, pkt]{ accessTiming(pkt); },
+        schedule(new EventFunctionWrapper([this, pkt, port_id]{ accessTiming(pkt, port_id); },
                                       name() + ".accessEvent", true),
                 clockEdge(queueLatency));
     } else {
@@ -395,7 +403,7 @@ CodeletInterface::CodSideRespPort::recvFunctional(PacketPtr pkt)
 {
     // Just forward to the interface
     // handleFunctional should decide whether to forward or do a queue operation
-    return owner->handleFunctional(pkt);
+    return owner->handleFunctional(pkt, InvalidPortID);
 }
 
 bool

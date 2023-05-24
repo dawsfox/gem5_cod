@@ -2,7 +2,8 @@
 #include "stdio.h"
 //#include <type_traits>
 
-#define interface_queue_addr 0x90000002
+#define INTERFACE_ACTIVE_COD_PTR 0x90000000
+#define INTERFACE_COD_AVAIL_PTR INTERFACE_ACTIVE_COD_PTR + sizeof(runt_codelet_t)
 
 // this is a statically allocated codelet graph that should be loaded into SU
 // later, this will be syncSlots instead of just codelets
@@ -36,26 +37,30 @@ void helloCodFireTwo(void * dest, void * src1, void * src2) {
 }
 
 void helloCodFireThree(void * dest, void * src1, void * src2) {
-    printf("it's v3 here\n");
+    printf("it's hi v3 here\n");
 }
 
 int main(int argc, char* argv[])
 {
     bool alive_sig = true;
     printf("register space has address %p\n", register_space);
+    volatile unsigned * codeletAvailable;
+    volatile runt_codelet_t * toFire;
     while(alive_sig) {
-        //volatile fire_t fire;
-        //fire = *(fire_t *)interface_queue_addr;
-        //asm volatile("mov %1, (%0)" : "=r" (tmp_cod.fire) : "r" (interface_queue_addr));
-        runt_codelet_t toFire;
-        toFire = *(runt_codelet_t *)interface_queue_addr;
-        printf("fire = %p\n", (void *)toFire.fire);
-        printf("codelet name: %s\n", toFire.name);
-        if (toFire.fire != nullptr && toFire.fire != (fire_t)0xffffffffffffffff) {
-            toFire.fire(toFire.dest, toFire.src1, toFire.src2);
-        } else if (toFire.fire == (fire_t)0xffffffffffffffff) {
-            alive_sig = false;
-            printf("program ending\n");
+        codeletAvailable = (volatile unsigned *) INTERFACE_COD_AVAIL_PTR;
+        toFire = (volatile runt_codelet_t *)INTERFACE_ACTIVE_COD_PTR;
+        if (codeletAvailable) {
+            printf("fire = %p\n", (void *)toFire->fire);
+            printf("codelet name: %s\n", toFire->name);
+            if (toFire->fire != nullptr && toFire->fire != (fire_t)0xffffffffffffffff) {
+                toFire->fire(toFire->dest, toFire->src1, toFire->src2);
+                // this should perform a write operation to the activeCodelet in the CodeletInterface
+                // which should be accepted as CodeletRetirement
+                toFire->fire = nullptr;
+            } else if (toFire->fire == (fire_t)0xffffffffffffffff) {
+                alive_sig = false;
+                printf("program ending\n");
+            }
         }
     }
     printf("program returning\n");
