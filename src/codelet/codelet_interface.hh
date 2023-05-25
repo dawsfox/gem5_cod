@@ -73,7 +73,6 @@ class CodeletInterface : public ClockedObject
       private:
         CodeletInterface *owner;
         PacketPtr blockedPacket;
-        AddrRangeList portRanges;
 
       public:
         MemSidePort(const std::string& name, CodeletInterface *owner) :
@@ -101,33 +100,30 @@ class CodeletInterface : public ClockedObject
          */
         void recvRangeChange() override;
 
-        AddrRangeList getPortRanges();
     };
 
     class CodSideReqPort : public RequestPort
     {
       private:
-        int id;
         CodeletInterface *owner;
         PacketPtr blockedPacket;
-        std::list<AddrRangeList> portRangesList;
 
       public:
-        CodSideReqPort(const std::string& name, int id, CodeletInterface *owner) :
-            RequestPort(name, owner), id(id), owner(owner), blockedPacket(nullptr)
+        CodSideReqPort(const std::string& name, CodeletInterface *owner) :
+            RequestPort(name, owner), owner(owner), blockedPacket(nullptr)
         { }
 
-        void sendPacket(PacketPtr pkt) {}
+        void sendPacket(PacketPtr pkt);
 
       protected:
-        bool recvTimingResp(PacketPtr pkt) override {return false;}
+        bool recvTimingResp(PacketPtr pkt) override;
 
         /**
          * Called by the response port if sendTimingReq was called on this
          * request port (causing recvTimingReq to be called on the response
          * port) and was unsuccesful.
          */
-        void recvReqRetry() override {}
+        void recvReqRetry() override;
 
         /**
          * Called to receive an address range change from the peer response
@@ -138,7 +134,6 @@ class CodeletInterface : public ClockedObject
          */
         void recvRangeChange() override;
 
-        std::list<AddrRangeList> getPortRangesList();
     }; // class CodSideReqPort
 
     class CodSideRespPort : public ResponsePort
@@ -293,12 +288,16 @@ class CodeletInterface : public ClockedObject
     /// Address range of the local Codelet queue
     AddrRange queueRange;
 
+    // address that should be used for codelet retirement requests sent to the SU
+    Addr suRetAddr;
+
     /// Instantiation of the CPU-side ports, memory side port, and Codelet Side port
     // CPUSidePorts should be used for normal mem requests, as well as popping Codelets from queue (mem mapped)
     std::vector<CPUSidePort> cpuPorts;
     MemSidePort memPort;
     // codReqPorts used for Codelet Retirement and decrementing dependencies
-    std::vector<CodSideReqPort> codReqPorts;
+    //std::vector<CodSideReqPort> codReqPorts;
+    CodSideReqPort codReqPort;
     // codRespPort used for receiving Codelets from SU
     CodSideRespPort codRespPort;
 

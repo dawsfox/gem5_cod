@@ -58,17 +58,16 @@ system.codelet_interface = CodeletInterface()
 system.codelet_interface.queue_range = AddrRange(start = Addr(0x90000000), 
                                                  end = Addr(0x90000000)
                                                  + 0x40) #range should be size of codelet_t...
+#system.codelet_interface.su_ret_addr = Addr(0x90000040)
 # Create SU
 system.su = SU()
-# Arbitrary starting address for SU local storage; can change later
-system.su.su_sig_range = AddrRange(start = Addr(0x90000040),
-                                end = Addr(0x90000040)
-                                + 0x40) #random number to start with; roughly 16kB
 
-system.su.su_ret_range = AddrRange(start = Addr(0x90000080),
-                                end = Addr(0x90000080)
-                                + 0x8) #random number to start with; roughly 8.
+system.su.su_ret_range = AddrRange(start = Addr(0x90000040),
+                                end = Addr(0x90000040)
+                                + 0x80) #random number to start with; roughly 8.
                                 # ends at 0x900000b0
+
+#system.codelet_interface.su_ret_addr = system.su.su_ret_range.start()
 
 # Read in the file name of the SCM program as a string to send to the SU as a parameter
 system.su.scm_file_name = "/home/dfox/gem5_cod/tests/test-progs/codelet/src/test_prog.scm"
@@ -104,15 +103,15 @@ system.codelet_interface.mem_side_port = system.membus.cpu_side_ports
 
 # "Codelet side port" is a port that connects through the noncoherent Codelet bus instead of membus
 # Connecting Codelet side ports between Codelet Interface and codelet bus -- do the request ports really need to be separate?
-system.codelet_interface.cod_side_req_ports = system.codbus.cpu_side_ports # For retiring Codelets 
-system.codelet_interface.cod_side_req_ports = system.codbus.cpu_side_ports # For signaling dependencies
+system.codelet_interface.cod_side_req_port = system.codbus.cpu_side_ports # For retiring Codelets 
+#system.codelet_interface.cod_side_req_ports = system.codbus.cpu_side_ports # For signaling dependencies
 
 # Connect Codelet response port to codelet bus -- called mem_side b/c it's a request port, practically it's on the CPU side
 system.codelet_interface.cod_side_resp_port = system.codbus.mem_side_ports # For SU pushing Codelets to CU
 
 # Connect SU ports to the codelet bus
-system.su.cod_side_resp_ports = system.codbus.mem_side_ports
-system.su.cod_side_resp_ports = system.codbus.mem_side_ports
+system.su.cod_side_resp_port = system.codbus.mem_side_ports
+#system.su.cod_side_resp_ports = system.codbus.mem_side_ports
 
 # SU connects its request port to the codelet bus' cpu-side port (because it must connect to a response port) though it is physically not cpu-side
 system.su.cod_side_req_port = system.codbus.cpu_side_ports

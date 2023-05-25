@@ -8,12 +8,12 @@ class SU(ClockedObject):
     cxx_class = "gem5::SU"
 
     #Codelet side response port for receiving Codelets from SU
-    cod_side_resp_ports = VectorResponsePort("Response ports for handling decDep signaling and Codelet retiring")
+    cod_side_resp_port = ResponsePort("Response ports for handling decDep signaling and Codelet retiring")
     cod_side_req_port =  RequestPort("Request port for pushing Codelets to CUs")
 
     scm_file_name = Param.String("File name of the SCM program to be loaded into the SU")
 
-    su_sig_range = Param.AddrRange("Address range used by SU for dependency signalling")
+    #su_sig_range = Param.AddrRange("Address range used by SU for dependency signalling")
     su_ret_range = Param.AddrRange("Address range used by SU for codelet retirement")
 
     sig_latency = Param.Cycles(1, "Cycles delayed for signaling syncSlots")

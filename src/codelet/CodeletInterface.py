@@ -12,11 +12,12 @@ class CodeletInterface(ClockedObject):
     #Mem side for forwarding normal memory requests to membus
     mem_side_port = RequestPort("Memory side port, creates requests")
     #Codelet side request ports for retiring codelets and signaling dependencies
-    cod_side_req_ports =  VectorRequestPort("Request ports for signaling dependencies and retiring Codelets")
+    cod_side_req_port = RequestPort("Request ports for signaling dependencies and retiring Codelets")
     #Codelet side response port for receiving Codelets from SU
     cod_side_resp_port = ResponsePort("Response port for pushing Codelets from SU")
 
-    queue_range = Param.AddrRange("Address range used by local Codelet queue")
+    queue_range = Param.AddrRange(AddrRange(start = Addr(0x90000000), end = Addr(0x90000000) + 0x40), "Address range used by local Codelet queue")
+    su_ret_addr = Param.Addr(0x90000040, "Addres used for codelet retirement packets forwarded to SU")
     queue_latency = Param.Cycles(1, "Cycles delayed to process Codelet queue actions")
     gen_latency = Param.Cycles(0, "Cycles delayed for passing through requests")
     size = Param.MemorySize("16kB", "Codelet queue size")

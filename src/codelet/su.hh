@@ -12,7 +12,8 @@
 #include "codelet/SCMUlate/include/modules/instruction_mem.hpp"
 #include "codelet/SCMUlate/include/modules/register.hpp"
 //#include <queue>
-#include <list>
+//#include <list>
+#include <set>
 
 namespace gem5
 {
@@ -60,16 +61,16 @@ class SU : public ClockedObject
     class CodSideRespPort : public ResponsePort
     {
       private:
-        int id; //vector port needs id
+        //int id; //vector port needs id
         SU *owner;
         bool needRetry;
         PacketPtr blockedPacket;
         AddrRange suRange;
 
       public:
-        CodSideRespPort(const std::string& name, int id, SU *owner) :
-            ResponsePort(name, owner), id(id), owner(owner), needRetry(false),
-            blockedPacket(nullptr), suRange((id==0) ? owner->suSigRange : owner->suRetRange)
+        CodSideRespPort(const std::string& name, SU *owner) :
+            ResponsePort(name, owner), owner(owner), needRetry(false),
+            blockedPacket(nullptr), suRange(owner->suRetRange)
         { }
 
         void sendPacket(PacketPtr pkt);
@@ -118,7 +119,7 @@ class SU : public ClockedObject
      * @return true if we can handle the request this cycle, false if the
      *         requestor needs to retry later
      */
-    bool handleRequest(PacketPtr pkt, int port_id);
+    bool handleRequest(PacketPtr pkt);
 
     /**
      * Handle the respone from the memory side. Called from the cod resp port
@@ -221,16 +222,17 @@ class SU : public ClockedObject
     /// Number of slots in Codelet queue
     const unsigned capacity;
     // range for dep. signalling
-    AddrRange suSigRange;
+    //AddrRange suSigRange;
     // range for codelet retirement
     AddrRange suRetRange;
     // codReqPort used for pushing Codelets to CU
     CodSideReqPort codReqPort;
     // codRespPorts used for receiving Codelet retirements and dependency signaling from CU
-    std::vector<CodSideRespPort> codRespPorts;
+    //std::vector<CodSideRespPort> codRespPorts;
+    CodSideRespPort codRespPort;
 
     // port flow control -- may be changed later for queued ports
-    bool blocked;
+    bool respBlocked;
     bool reqBlocked;
 
     /// Packet that we are currently handling. Used for upgrading to larger
@@ -243,7 +245,10 @@ class SU : public ClockedObject
     /// For tracking the miss latency
     Tick missTime;
 
-    std::list<scm::decoded_instruction_t> executingInsts;
+    // Set of instructions that are executing on CUs
+    // Used on retirement to find the instruction to change state of 
+    //std::set<scm::decoded_instruction_t *> executingInsts;
+    std::queue<scm::instruction_state_pair *> executingInsts;
 
     // Size should probably be made a SU param later
     // honestly will probably be able to get rid of this later

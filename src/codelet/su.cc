@@ -227,31 +227,45 @@ SU::accessFunctional(PacketPtr pkt)
 {
     // this should be moved somewhere else; accessFunctional will probably be called
     // when the SU pushes to the queue as well. it's fine for now...
-    panic_if(!pkt->isRead(), "CPU should not do anything to queue space but read it");
-    // pop codelet and return
-    /*
-    if (!codQueue.empty()) {
-        codelet_t toPop = codQueue.front(); //get next Codelet up
-        codQueue.pop(); // remove it from the queue
-        // how to put it in a packet?
-        pkt->makeResponse();
-        auto data = pkt->getPtr<uint8_t>();
-        //auto size = pkt->getSize();
-        std::memcpy(data, &(toPop.fire), sizeof(fire_t));
-        //pkt->setSize(sizeof(codelet_t));
-        //pkt->setSize(sizeof(fire_t));
-        // no byte swapping, set new data
-        DPRINTF(SU, "popping Codelet from queue to send\n");
-        //pkt->dataStatic<codelet_t>(&toPop);
-        //pkt->dataStatic<fire_t>(&(toPop.fire));
-        //pkt->dataDynamic<fire_t>(&(toPop.fire));
-        return(true);
+    panic_if(!pkt->isWrite(), "CodeletInterface should only request retirement from SU i.e. a write request");
+    panic_if(executingInsts.empty(), "Codelet retirement arrived but no Codelets should be executing");
+    //scm::decoded_instruction_t * inst = executingInsts[];
+    runt_codelet_t * retiredCod = pkt->getPtr<runt_codelet_t>();
+   // set<scm::decoded_instruction_t *>::iterator itr;
+    // for now, executing instructions is a list and we are taking the first
+    // since we are working with only one CU in sequential mode
+    // TODO: change structure of executingInsts and find the correct instruction
+    // instead of assuming the front of the queue is the right one
+    scm::instruction_state_pair * inst_pair = executingInsts.front();
+    scm::decoded_instruction_t * inst = inst_pair->first;
+    void * dest, * src1, * src2;
+    for (uint32_t op_num = 1; op_num <= MAX_NUM_OPERANDS; op_num++) {
+        std::string & opStr = inst->getOpStr(op_num);
+        DPRINTF(SUSCM, "Reading operand: %s\n", opStr.data());
+        scm::operand_t & op = inst->getOp(op_num);
+        if (scm::instructions::isRegister(opStr)) {
+            // REGISTER REGISTER ADD CASE
+            op.value.reg.reg_ptr = regFile->getRegisterByName(op.value.reg.reg_size, op.value.reg.reg_number);
+            if (op_num == 1) {
+                dest = (void *) op.value.reg.reg_ptr;
+            } else if (op_num == 2) {
+                src1 = (void *) op.value.reg.reg_ptr;
+            } else if (op_num == 3) {
+                src2 = (void *) op.value.reg.reg_ptr;
+            }
+        } 
     }
-    else {
-        return(false);
-    }
-    */
-    return(false);
+    std::string codName = inst->getInstruction();
+
+    DPRINTF(SU, "SU received retirement for codelet with %s %p %p %p\n", retiredCod->name, retiredCod->dest, retiredCod->src1, retiredCod->src2);
+    DPRINTF(SU, "decoded instruction for retirement: %s %p %p %p\n", codName.data(), dest, src1, src2);
+    // assuming this is correct and this codelet matches with this instruction for now....
+    // mark instruction as finished executing -- codelet is now properly retired
+    inst_pair->second = scm::instruction_state::EXECUTION_DONE;
+    executingInsts.pop();
+    // make packet response for sending
+    pkt->makeResponse();
+    return(true);
 
 }
 
@@ -259,6 +273,7 @@ void
 SU::accessTiming(PacketPtr pkt)
 {
     // first do the access logic and check if it worked
+    DPRINTF(SU, "SU being accessed to serve request %s\n", pkt->print());
     if (accessFunctional(pkt)) {
         // managed to actually pop a codelet and modify packet
         sendResponse(pkt); // send back to CPU 
@@ -285,7 +300,7 @@ SU::CodSideRespPort::recvTimingReq(PacketPtr pkt)
         return false;
     }
     // Just forward to the interface.
-    if (!owner->handleRequest(pkt, id)) {
+    if (!owner->handleRequest(pkt)) {
         DPRINTF(SU, "Request failed\n");
         // stalling
         needRetry = true;
@@ -316,9 +331,10 @@ SU::CodSideRespPort::recvRespRetry()
 
 // have to edit this to cause the effect (signal/retirement) and make response
 bool
-SU::handleRequest(PacketPtr pkt, int port_id)
+SU::handleRequest(PacketPtr pkt)
 {
-    if (blocked) {
+    if (respBlocked) {
+        DPRINTF(SU, "handleRequest failed -- SU has outstanding request\n");
         // There is currently an outstanding request so we can't respond. Stall
         return false;
     }
@@ -326,23 +342,23 @@ SU::handleRequest(PacketPtr pkt, int port_id)
     DPRINTF(SU, "Got request for addr %#x\n", pkt->getAddr());
 
     // This interface is now blocked waiting for the response to this packet.
-    blocked = true;
+    respBlocked = true;
 
     // Store the port for when we get the response
     assert(waitingPortId == -1);
-    waitingPortId = port_id;
+    //waitingPortId = port_id;
+    // don't need that since requests can only come from one port
 
     // Here we check address to see if a queue interaction is needed
     Addr reqAddr = pkt->getAddr();
-    if (suSigRange.contains(reqAddr)) {
+    if (suRetRange.contains(reqAddr)) {
         // Local queue access
         // Schedule an event after queue access latency to actually access
         schedule(new EventFunctionWrapper([this, pkt]{ accessTiming(pkt); },
                                       name() + ".accessEvent", true),
                 clockEdge(sigLatency));
     } else {
-        DPRINTF(SU, "forwarding packet\n");
-        //memPort.sendPacket(pkt);
+        panic_if(!suRetRange.contains(reqAddr), "SU received request with incorrect address");
     }
     return true;
 }
@@ -365,7 +381,7 @@ SU::handleResponse(PacketPtr pkt)
 void
 SU::sendResponse(PacketPtr pkt)
 {
-    assert(blocked);
+    assert(respBlocked);
     DPRINTF(SU, "Sending resp for addr %#x\n", pkt->getAddr());
 
     int port = waitingPortId;
@@ -374,17 +390,14 @@ SU::sendResponse(PacketPtr pkt)
     // this object to continue to stall.
     // We need to free the resource before sending the packet in case the CPU
     // tries to send another request immediately (e.g., in the same callchain).
-    blocked = false;
+    respBlocked = false;
     waitingPortId = -1;
 
-    // Simply forward to the memory port
-    codRespPorts[port].sendPacket(pkt);
+    // Simply send reply back to the CodeletInterface
+    codRespPort.sendPacket(pkt);
 
-    // For each of the cpu ports, if it needs to send a retry, it should do it
-    // now since this memory object may be unblocked now.
-    for (auto& port : codRespPorts) {
-        port.trySendRetry();
-    }
+    // Need to send retry to response port so it knows we can accept new packets
+    codRespPort.trySendRetry();
 }
 
 void
@@ -493,7 +506,9 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
     // don't forget we also need to implement codelet retirement
     Addr interface_addr(0x90000000);
     if(sendRequest(toPush, interface_addr)) {
-        inst_pair->second = scm::instruction_state::EXECUTION_DONE;
+        // add instruction that was sent to the list of instructions in execution
+        executingInsts.push(inst_pair);
+        //inst_pair->second = scm::instruction_state::EXECUTION_DONE;
         return(true);
     } else {
         return(false);
@@ -534,11 +549,8 @@ void
 SU::sendRangeChange() const
 {
     DPRINTF(SU, "SU sending range change\n");
-    // call on the SU's response side ports...
-    for (auto& port : codRespPorts) {
-        port.sendRangeChange();
-    }
-
+    // call on the SU's response side port...
+    codRespPort.sendRangeChange();
 }
 
 AddrRangeList
@@ -643,19 +655,19 @@ SU::SU(const SUParams &params) :
     system(params.system),
     sigLatency(params.sig_latency),
     capacity(params.size), //should make this more accurate later, right now it doesn't matter
-    suSigRange(params.su_sig_range),
+    //suSigRange(params.su_sig_range),
     suRetRange(params.su_ret_range),
     codReqPort(params.name + ".cod_side_req_port", this),
-    blocked(false), reqBlocked(false), originalPacket(nullptr), 
+    codRespPort(params.name + ".cod_side_resp_port", this),
+    respBlocked(false), reqBlocked(false), originalPacket(nullptr), 
     waitingPortId(-1), stats(this)
 {
-    //strcpy(scmFileName, params.scm_file_name.c_str());
-    //instructionMem(scmFileName, &regFile);
+    /*
     for (int i = 0; i < params.port_cod_side_resp_ports_connection_count; i++) {
         // again unsure of the param name ...
         codRespPorts.emplace_back(name() + csprintf(".cod_side_resp_ports[%d]", i), i, this);
     }
-    //= {(fire_t)0xffffffffffffffff, 0,0,0,0, "finalCodelet"}; //final codelet definition
+     */
     finalCod.fire = (fire_t)0xffffffffffffffff;
     finalCod.dest = nullptr;
     finalCod.src1 = nullptr;
@@ -670,11 +682,13 @@ SU::getPort(const std::string &if_name, PortID idx)
     // This is the name from the Python SimObject declaration
     if (if_name == "cod_side_req_port") {
         panic_if(idx != InvalidPortID,
-                 "Cod side req of codelet interface not a vector port");
+                 "Cod side req of SU not a vector port");
         return(codReqPort);
-    } else if (if_name == "cod_side_resp_ports" && idx < codRespPorts.size()) {
+    } else if (if_name == "cod_side_resp_port") {
+        panic_if(idx != InvalidPortID,
+                 "Cod side resp of SU not a vector port");
         // We should have already created all of the ports in the constructor
-        return(codRespPorts[idx]);
+        return(codRespPort);
     } else {
         // pass it along to our super class
         return(ClockedObject::getPort(if_name, idx));
