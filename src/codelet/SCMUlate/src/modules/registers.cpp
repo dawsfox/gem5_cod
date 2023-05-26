@@ -33,6 +33,7 @@ void
 scm::reg_file_module::describeRegisterFile() {
   SCMULATE_INFOMSG(0, "REGISTER FILE DEFINITION");
   SCMULATE_INFOMSG(0, " SIZE = %ld", CALCULATE_REG_SIZE);
+  SCMULATE_INFOMSG(0, " START = %p", this->reg_file);
   SCMULATE_INFOMSG(1, " %ld registers of 64BITS, each of %d bytes. Total size = %ld  -- %f percent ", NUM_REG_64BITS, 64/8, NUM_REG_64BITS*64/8, (NUM_REG_64BITS*64/8)*100.0f/CALCULATE_REG_SIZE);
   SCMULATE_INFOMSG(1, " %ld registers of 1LINE each of %ld bytes. Total size = %ld  -- %f percent", NUM_REG_1LINE, CACHE_LINE_SIZE, NUM_REG_1LINE*CACHE_LINE_SIZE, NUM_REG_1LINE*CACHE_LINE_SIZE*100.0f/CALCULATE_REG_SIZE);
   SCMULATE_INFOMSG(1, " %ld registers of 8LINE each of %ld bytes. Total size = %ld  -- %f percent", NUM_REG_8LINE, CACHE_LINE_SIZE*8, NUM_REG_8LINE*8*CACHE_LINE_SIZE, NUM_REG_8LINE*8*CACHE_LINE_SIZE*100.0f/CALCULATE_REG_SIZE);

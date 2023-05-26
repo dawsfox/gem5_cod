@@ -80,5 +80,8 @@ class Codelet {
 void helloCodFire(void * dest, void * src1, void * src2);
 void helloCodFireTwo(void * dest, void * src1, void * src2);
 void helloCodFireThree(void * dest, void * src1, void * src2);
+void vecInitOne(void * dest, void * src1, void * src2);
+void vecInitTwo(void * dest, void * src1, void * src2);
+void vecAdd(void * dest, void * src1, void * src2);
 
 #endif

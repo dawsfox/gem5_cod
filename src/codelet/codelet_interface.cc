@@ -154,9 +154,11 @@ CodeletInterface::accessFunctional(PacketPtr pkt, int port_id)
         runt_codelet_t toPop = activeCodelet; //get available codelet
         pkt->makeResponse();
         Addr codOffset = reqAddr - Addr(0x90000000); // offset of field requested
-        void * fieldPtr = (&activeCodelet) + codOffset; // pointer to data field requested
+        char * activeCodStart = (char *) &activeCodelet;
+        char * fieldPtr = activeCodStart + codOffset; // pointer to data field requested
         std::memcpy(data, fieldPtr, pkt->getSize()); //only copy data of size that was requested
-        DPRINTF(CodeletInterfaceQueue, "popping Codelet from queue to send: %lx %p %p %p %s\n", (unsigned long) toPop.fire, toPop.dest, toPop.src1, toPop.src2, toPop.name);
+        DPRINTF(CodeletInterfaceQueue, "returning field at %lx (based on offset %lx) that has data %lx\n", (unsigned long) fieldPtr, (unsigned long)codOffset, (unsigned long)*data);
+        DPRINTF(CodeletInterfaceQueue, "activeCodelet is: %lx %p %p %p %s\n", (unsigned long) toPop.fire, toPop.dest, toPop.src1, toPop.src2, toPop.name);
         sendResponse(pkt); // send back to origin port 
         return(true);
     }

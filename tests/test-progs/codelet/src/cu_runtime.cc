@@ -7,7 +7,7 @@
 
 // this is a statically allocated codelet graph that should be loaded into SU
 // later, this will be syncSlots instead of just codelets
-#define CODELET_NUM 3
+#define CODELET_NUM 6
 #define REG_FILE_SIZE_KB 12288l
 
 /*
@@ -22,7 +22,10 @@ codelet_t codelet_graph[CODELET_NUM] __attribute__ ((section(".codelet_program")
 
 user_codelet_t codelet_graph[CODELET_NUM] __attribute__ ((section(".codelet_program"))) = {{"HelloCod_2048L", helloCodFire},
                                                                                            {"HelloCodTwo_2048L", helloCodFireTwo},
-                                                                                           {"HelloCodThree_2048L", helloCodFireThree}};
+                                                                                           {"HelloCodThree_2048L", helloCodFireThree},
+                                                                                           {"VecInitOne_2048L", vecInitOne},
+                                                                                           {"VecInitTwo_2048L", vecInitTwo},
+                                                                                           {"VecAdd_2048L", vecAdd}};
 
 unsigned char register_space[REG_FILE_SIZE_KB * 1000];
 
@@ -38,6 +41,35 @@ void helloCodFireTwo(void * dest, void * src1, void * src2) {
 
 void helloCodFireThree(void * dest, void * src1, void * src2) {
     printf("it's hi v3 here\n");
+}
+
+void vecInitOne(void * dest, void * src1, void * src2) {
+    printf("running vecInitOne\n");
+    printf("vecInitOne has dest: %p, src1: %p, src2: %p\n", dest, src1, src2);
+    int * vecDest = (int *) dest;
+    for (int i=0; i<1024; i++) {
+        vecDest[i] = i;
+    }
+}
+
+void vecInitTwo(void * dest, void * src1, void * src2) {
+    printf("running vecInitTwo\n");
+    printf("vecInitTwo has dest: %p, src1: %p, src2: %p\n", dest, src1, src2);
+    int * vecDest = (int *) dest;
+    for (int i=0; i<1024; i++) {
+        vecDest[i] = i + i;
+    }
+}
+
+void vecAdd(void * dest, void * src1, void * src2) {
+    printf("running vecAdd\n");
+    int * vecDest = (int *) dest;
+    int * vecSrc1 = (int *) src1;
+    int * vecSrc2 = (int *) src2;
+    for (int i=0; i<1024; i++) {
+        vecDest[i] = vecSrc1[i] + vecSrc2[i];
+        printf("it %d: %d + %d = %d\n", i, vecSrc1[i], vecSrc2[i], vecDest[i]);
+    }
 }
 
 int main(int argc, char* argv[])

@@ -481,10 +481,14 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
             op.value.reg.reg_ptr = regFile->getRegisterByName(op.value.reg.reg_size, op.value.reg.reg_number);
             if (op_num == 1) {
                 dest = (void *) op.value.reg.reg_ptr;
+                // for some reason, gem5 crashes trying to print the reg_ptr as %p but not dest......
+                DPRINTF(SUSCM, "dest set to %p based on %lx\n", dest, (long unsigned)op.value.reg.reg_ptr);
             } else if (op_num == 2) {
                 src1 = (void *) op.value.reg.reg_ptr;
+                DPRINTF(SUSCM, "src1 set to %p based on %lx\n", src1, (long unsigned)op.value.reg.reg_ptr);
             } else if (op_num == 3) {
                 src2 = (void *) op.value.reg.reg_ptr;
+                DPRINTF(SUSCM, "src2 set to %p based on %lx\n", src2, (long unsigned)op.value.reg.reg_ptr);
             }
         } 
     }
@@ -502,6 +506,7 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
     runt_codelet_t * toPush = (runt_codelet_t *) malloc(sizeof(runt_codelet_t));
     memcpy(toPush, &tmp, sizeof(runt_codelet_t));
     DPRINTF(SUSCM, "Runtime codelet built: %p\t%p\t%p\t%p\t%s\n", (void *)tmp.fire, tmp.dest, tmp.src1, tmp.src2, tmp.name);
+    DPRINTF(SUSCM, "toPush for comparison: %p\t%p\t%p\t%p\t%s\n", (void *)toPush->fire, toPush->dest, toPush->src1, toPush->src2, toPush->name);
     // send to CodeletInterface
     // don't forget we also need to implement codelet retirement
     Addr interface_addr(0x90000000);
