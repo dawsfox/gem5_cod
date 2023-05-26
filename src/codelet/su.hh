@@ -247,8 +247,10 @@ class SU : public ClockedObject
 
     // Set of instructions that are executing on CUs
     // Used on retirement to find the instruction to change state of 
-    //std::set<scm::decoded_instruction_t *> executingInsts;
-    std::queue<scm::instruction_state_pair *> executingInsts;
+    // Queue is fine for scm::SEQUENTIAL but won't work for superscalar or ooo
+    // So let's use a map of fire function : instruction_state_pair *
+    //std::queue<scm::instruction_state_pair *> executingInsts;
+    std::map<fire_t, std::list<scm::instruction_state_pair *>> executingInsts;
 
     // Size should probably be made a SU param later
     // honestly will probably be able to get rid of this later

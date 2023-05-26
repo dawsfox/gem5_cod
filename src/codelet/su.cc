@@ -229,40 +229,49 @@ SU::accessFunctional(PacketPtr pkt)
     // when the SU pushes to the queue as well. it's fine for now...
     panic_if(!pkt->isWrite(), "CodeletInterface should only request retirement from SU i.e. a write request");
     panic_if(executingInsts.empty(), "Codelet retirement arrived but no Codelets should be executing");
-    //scm::decoded_instruction_t * inst = executingInsts[];
     runt_codelet_t * retiredCod = pkt->getPtr<runt_codelet_t>();
-   // set<scm::decoded_instruction_t *>::iterator itr;
-    // for now, executing instructions is a list and we are taking the first
-    // since we are working with only one CU in sequential mode
-    // TODO: change structure of executingInsts and find the correct instruction
-    // instead of assuming the front of the queue is the right one
-    scm::instruction_state_pair * inst_pair = executingInsts.front();
-    scm::decoded_instruction_t * inst = inst_pair->first;
+    //scm::instruction_state_pair * inst_pair = executingInsts.front(); // for queue version
     void * dest, * src1, * src2;
-    for (uint32_t op_num = 1; op_num <= MAX_NUM_OPERANDS; op_num++) {
-        std::string & opStr = inst->getOpStr(op_num);
-        DPRINTF(SUSCM, "Reading operand: %s\n", opStr.data());
-        scm::operand_t & op = inst->getOp(op_num);
-        if (scm::instructions::isRegister(opStr)) {
-            // REGISTER REGISTER ADD CASE
-            op.value.reg.reg_ptr = regFile->getRegisterByName(op.value.reg.reg_size, op.value.reg.reg_number);
-            if (op_num == 1) {
-                dest = (void *) op.value.reg.reg_ptr;
-            } else if (op_num == 2) {
-                src1 = (void *) op.value.reg.reg_ptr;
-            } else if (op_num == 3) {
-                src2 = (void *) op.value.reg.reg_ptr;
-            }
-        } 
+    // get list based on fire function
+    std::list<scm::instruction_state_pair *> listByFire = executingInsts[retiredCod->fire];
+    std::list<scm::instruction_state_pair *>::iterator itr;
+    // iterate through list of instructions with same fire function to find the matching one (same registers)
+    for (itr = listByFire.begin(); itr != listByFire.end(); itr++) {
+        scm::instruction_state_pair * inst_pair = *itr; 
+        scm::decoded_instruction_t * inst = inst_pair->first;
+        for (uint32_t op_num = 1; op_num <= MAX_NUM_OPERANDS; op_num++) {
+            std::string & opStr = inst->getOpStr(op_num);
+            DPRINTF(SUSCM, "Reading operand: %s\n", opStr.data());
+            scm::operand_t & op = inst->getOp(op_num);
+            if (scm::instructions::isRegister(opStr)) {
+                // REGISTER REGISTER ADD CASE
+                op.value.reg.reg_ptr = regFile->getRegisterByName(op.value.reg.reg_size, op.value.reg.reg_number);
+                if (op_num == 1) {
+                    dest = (void *) op.value.reg.reg_ptr;
+                } else if (op_num == 2) {
+                    src1 = (void *) op.value.reg.reg_ptr;
+                } else if (op_num == 3) {
+                    src2 = (void *) op.value.reg.reg_ptr;
+                }
+            } 
+        }
+        if (retiredCod->dest == dest && retiredCod->src1 == src1 && retiredCod->src2 == src2) {
+            break;
+        }
     }
+    panic_if(itr == listByFire.end(), "SU received retirement for instruction it cannot find");
+    // Correct instruction found, set to done and remove from the list
+    (*itr)->second = scm::EXECUTION_DONE;
+    scm::decoded_instruction_t * inst = (*itr)->first;
+    listByFire.erase(itr);
     std::string codName = inst->getInstruction();
 
     DPRINTF(SU, "SU received retirement for codelet with %s %p %p %p\n", retiredCod->name, retiredCod->dest, retiredCod->src1, retiredCod->src2);
     DPRINTF(SU, "decoded instruction for retirement: %s %p %p %p\n", codName.data(), dest, src1, src2);
     // assuming this is correct and this codelet matches with this instruction for now....
     // mark instruction as finished executing -- codelet is now properly retired
-    inst_pair->second = scm::instruction_state::EXECUTION_DONE;
-    executingInsts.pop();
+    //inst_pair->second = scm::instruction_state::EXECUTION_DONE;
+    //executingInsts.pop(); // for queue version
     // make packet response for sending
     pkt->makeResponse();
     return(true);
@@ -273,7 +282,7 @@ void
 SU::accessTiming(PacketPtr pkt)
 {
     // first do the access logic and check if it worked
-    DPRINTF(SU, "SU being accessed to serve request %s\n", pkt->print());
+    DPRINTF(SU, "SU being accessed for codelet retirement to serve request %s\n", pkt->print());
     if (accessFunctional(pkt)) {
         // managed to actually pop a codelet and modify packet
         sendResponse(pkt); // send back to CPU 
@@ -354,6 +363,7 @@ SU::handleRequest(PacketPtr pkt)
     if (suRetRange.contains(reqAddr)) {
         // Local queue access
         // Schedule an event after queue access latency to actually access
+        DPRINTF(SU, "Scheduling codelet retirement\n");
         schedule(new EventFunctionWrapper([this, pkt]{ accessTiming(pkt); },
                                       name() + ".accessEvent", true),
                 clockEdge(sigLatency));
@@ -438,10 +448,10 @@ SU::CodSideReqPort::recvReqRetry()
 bool
 SU::sendRequest(runt_codelet_t *toPush, Addr dest)
 {
-    DPRINTF(SU, "Pushing codelet to interface with addr %#x\n", dest);
     if (reqBlocked) { //can't send if already being used
         return false;
     }
+    DPRINTF(SU, "Pushing codelet to interface with addr %#x\n", dest);
     reqBlocked = true;
     // addr should be one that is contained within the CodeletInterface
     // between 0x90000000 and 0x9000000f. Should be a write, also...
@@ -474,7 +484,7 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
     // code belowed adapted from decoded_instruction_t::decodeOperands
     for (uint32_t op_num = 1; op_num <= MAX_NUM_OPERANDS; op_num++) {
         std::string & opStr = inst->getOpStr(op_num);
-        DPRINTF(SUSCM, "Reading operand: %s\n", opStr.data());
+        //DPRINTF(SUSCM, "Reading operand: %s\n", opStr.data());
         scm::operand_t & op = inst->getOp(op_num);
         if (scm::instructions::isRegister(opStr)) {
             // REGISTER REGISTER ADD CASE
@@ -482,13 +492,13 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
             if (op_num == 1) {
                 dest = (void *) op.value.reg.reg_ptr;
                 // for some reason, gem5 crashes trying to print the reg_ptr as %p but not dest......
-                DPRINTF(SUSCM, "dest set to %p based on %lx\n", dest, (long unsigned)op.value.reg.reg_ptr);
+                //DPRINTF(SUSCM, "dest set to %p based on %lx\n", dest, (long unsigned)op.value.reg.reg_ptr);
             } else if (op_num == 2) {
                 src1 = (void *) op.value.reg.reg_ptr;
-                DPRINTF(SUSCM, "src1 set to %p based on %lx\n", src1, (long unsigned)op.value.reg.reg_ptr);
+                //DPRINTF(SUSCM, "src1 set to %p based on %lx\n", src1, (long unsigned)op.value.reg.reg_ptr);
             } else if (op_num == 3) {
                 src2 = (void *) op.value.reg.reg_ptr;
-                DPRINTF(SUSCM, "src2 set to %p based on %lx\n", src2, (long unsigned)op.value.reg.reg_ptr);
+                //DPRINTF(SUSCM, "src2 set to %p based on %lx\n", src2, (long unsigned)op.value.reg.reg_ptr);
             }
         } 
     }
@@ -508,12 +518,12 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
     DPRINTF(SUSCM, "Runtime codelet built: %p\t%p\t%p\t%p\t%s\n", (void *)tmp.fire, tmp.dest, tmp.src1, tmp.src2, tmp.name);
     DPRINTF(SUSCM, "toPush for comparison: %p\t%p\t%p\t%p\t%s\n", (void *)toPush->fire, toPush->dest, toPush->src1, toPush->src2, toPush->name);
     // send to CodeletInterface
-    // don't forget we also need to implement codelet retirement
+    // at some point, we should avoid doing this work every single time unless SU isn't blocked
     Addr interface_addr(0x90000000);
     if(sendRequest(toPush, interface_addr)) {
         // add instruction that was sent to the list of instructions in execution
-        executingInsts.push(inst_pair);
-        //inst_pair->second = scm::instruction_state::EXECUTION_DONE;
+        //executingInsts.push(inst_pair); // for queue verions of executingInsts
+        executingInsts[tmp.fire].push_back(inst_pair);
         return(true);
     } else {
         return(false);
@@ -649,10 +659,8 @@ SU::tick()
 
 SU::SU(const SUParams &params) :
     ClockedObject(params),
-    //controlStore(1),
-    //instructionMem(params.scm_file_name.data(), &regFile),
-    ilpMode(scm::SEQUENTIAL),
-    //fetchDecode(&instructionMem, &controlStore, &aliveSig, ilpMode, this),
+    //ilpMode(scm::SEQUENTIAL),
+    ilpMode(scm::OOO),
     scmFileName(params.scm_file_name.data()),
     tickEvent([this]{ tick(); }, "SU tick",
                 false, Event::CPU_Tick_Pri),
@@ -667,12 +675,6 @@ SU::SU(const SUParams &params) :
     respBlocked(false), reqBlocked(false), originalPacket(nullptr), 
     waitingPortId(-1), stats(this)
 {
-    /*
-    for (int i = 0; i < params.port_cod_side_resp_ports_connection_count; i++) {
-        // again unsure of the param name ...
-        codRespPorts.emplace_back(name() + csprintf(".cod_side_resp_ports[%d]", i), i, this);
-    }
-     */
     finalCod.fire = (fire_t)0xffffffffffffffff;
     finalCod.dest = nullptr;
     finalCod.src1 = nullptr;

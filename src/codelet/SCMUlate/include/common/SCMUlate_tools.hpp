@@ -23,7 +23,7 @@ typedef unsigned char * l2_memory_t;
 #define VERBOSE_MODE -1
 #endif
 */
-#define VERBOSE_MODE 6
+#define VERBOSE_MODE 3
 
 #ifdef PROFILER_INSTRUMENT
   #if __INTEL_LLVM_COMPILER
