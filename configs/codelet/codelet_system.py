@@ -25,8 +25,10 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-""" This file creates a barebones system and executes 'hello', a simple Hello
-World application. Adds a simple cache between the CPU and the membus.
+""" This file creates a barebones codelet system with a CodeletInterface
+for a single x86 CPU and Scheduling Unit. The SCM program path is hardcoded
+and this system is intended to be ran with the workload set as the CU runtime
+with user defined Codelets compiled into it.
 
 This config file assumes that the x86 ISA was built.
 """
