@@ -53,32 +53,31 @@ valid_configs = {cls.__name__[:-3]:cls for cls in valid_configs}
 
 parser = argparse.ArgumentParser()
 parser.add_argument('config', choices = valid_configs.keys())
+parser.add_argument('num_cores', type = int, help = "Number of cores to instantiate")
 parser.add_argument('binary', type = str, help = "Path to binary to run")
 args = parser.parse_args()
 
 #class TestSystem(MySystem):
 class TestSystem(MyCodeletSystem):
     _CPUModel = valid_configs[args.config]
-    def __init__(self, scmProgPath):
-        super(TestSystem, self).__init__(scmProgPath)
+    def __init__(self, scmProgPath, numCores):
+        super(TestSystem, self).__init__(scmProgPath, numCores)
 
 
 # For now, hardcode scm program path
 scm_file_name = "/home/dfox/gem5_cod/tests/test-progs/codelet/src/test_prog.scm"
-system = TestSystem(scm_file_name)
-system.setTestBinary(args.binary)
+system = TestSystem(scm_file_name, args.num_cores)
+system.setTestBinary(args.binary, args.num_cores)
 root = Root(full_system = False, system = system)
 m5.instantiate()
 
-# for now we are only running 1 cpu and 1 workload so hopefully this works
-system.cpu.workload[0].map(Addr(0x90000000),
+# With multiple CodeletInterfaces, we need to make sure in the CU runtime the addresses are checked properly
+for i in range(args.num_cores):
+    system.cpu[i].workload[0].map(Addr(0x90000000),
             Addr(0x90000000),
-            0x40000000,
+            #0xf0,
+            0x44 * args.num_cores + 0x80, #Extending to cover space of multiple CodeletInterfaces and the SU 
             False)
-    #process.map(Addr(0x90000000),
-    #        Addr(0x90000000),
-    #        0x40000000,
-    #        False)
 
 print("Beginning simulation!")
 exit_event = m5.simulate()

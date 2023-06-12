@@ -37,8 +37,7 @@ from .caches import *
 class MyCodeletSystem(System):
 
   _CPUModel = BaseCPU
-
-  def __init__(self, scmProgPath):
+  def __init__(self, scmProgPath, numCores):
     super(MyCodeletSystem, self).__init__()
 
     self.clk_domain = SrcClockDomain()
@@ -52,7 +51,8 @@ class MyCodeletSystem(System):
                       AddrRange(Addr('4GB'), size = mem_size) # All data
                         ]
 
-    self.cpu = self._CPUModel()
+    #self.cpu = self._CPUModel()
+    self.cpu=[self._CPUModel(cpu_id=i) for i in range(numCores)]
 
     # Create a memory bus
     self.membus = SystemXBar(width = 192)
@@ -62,23 +62,6 @@ class MyCodeletSystem(System):
     # Set up the system port for functional access from the simulator
     self.system_port = self.membus.cpu_side_ports
 
-    # Create Codelet Interface for the CPU
-    self.codelet_interface = CodeletInterface()
-    self.codelet_interface.queue_range = AddrRange(start = Addr(0x90000000), 
-                                                 end = Addr(0x90000000)
-                                                 + 0x40) #range should be size of codelet_t...
-    # Create SU
-    self.su = SU()
-
-    self.su.su_ret_range = AddrRange(start = Addr(0x90000040),
-                                end = Addr(0x90000040)
-                                + 0x80) #random number to start with; roughly 8.
-                                # ends at 0x900000b0
-
-
-    # Read in the file name of the SCM program as a string to send to the SU as a parameter
-    self.su.scm_file_name = scmProgPath
-
     # Set up Codelet bus for CodeletInterface and SU
     self.codbus = NoncoherentXBar()
     self.codbus.forward_latency = 0 #placeholder
@@ -86,85 +69,122 @@ class MyCodeletSystem(System):
     self.codbus.response_latency = 0 #placeholder
     self.codbus.width = 64 #placeholder
 
-    # Create an L1 instruction and data cache
-    self.cpu.icache = L1ICache()
-    # Make sure to initialize the version of L1DCache that connects to the CodeletInterface
-    self.cpu.dcache = L1DCacheCod()
-    self.cpu.mmucache = MMUCache()
-
-    # Connect the instruction and mmu cache to CPU
-    self.cpu.icache.connectCPU(self.cpu)
-    # Connect data cache (L1) to CodeletInterface
-    self.cpu.dcache.connectCPU(self.codelet_interface)
-    self.cpu.mmucache.connectCPU(self.cpu)
-
-    # Connect cpu dcache port to the Codelet Interface
-    # The icache port has already been connected directly to the L1 icache
-    self.cpu.dcache_port = self.codelet_interface.cpu_side_ports
-
-    # Forwarding non-codelet data requests through Codelet Interface to the L1 dcache
-    # Note that the CodeletInterface mem side port is already connected to dcache from
-    # above dcache.connectCPU call
-
-    # "Codelet side port" is a port that connects through the noncoherent Codelet bus instead of membus
-    # Connecting Codelet side ports between Codelet Interface and codelet bus
-    self.codelet_interface.cod_side_req_port = self.codbus.cpu_side_ports # For retiring Codelets 
-
-    # Connect Codelet response port to codelet bus -- called mem_side b/c it's a request port, practically it's on the CPU side
-    self.codelet_interface.cod_side_resp_port = self.codbus.mem_side_ports # For SU pushing Codelets to CU
-
-    # Connect SU ports to the codelet bus
-    self.su.cod_side_resp_port = self.codbus.mem_side_ports
-
-    # SU connects its request port to the codelet bus' cpu-side port (because it must connect to a response port) though it is physically not cpu-side
-    self.su.cod_side_req_port = self.codbus.cpu_side_ports
-
-    # Create a memory bus, a coherent crossbar, in this case
-    self.l2bus = L2XBar(width = 192)
-
-    # Hook the CPU ports up to the l2bus
-    self.cpu.icache.connectBus(self.l2bus)
-    self.cpu.dcache.connectBus(self.l2bus)
-    self.cpu.mmucache.connectBus(self.l2bus)
-
-    # Create an L2 cache and connect it to the l2bus
-    self.l2cache = L2Cache()
-    self.l2cache.connectCPUSideBus(self.l2bus)
-
     # Create a memory bus, a coherent crossbar, in this case
     self.l3bus = L2XBar(width = 192,
                         snoop_filter = SnoopFilter(max_capacity='32MB'))
-
-    # Connect the L2 cache to the l3bus
-    self.l2cache.connectMemSideBus(self.l3bus)
-
     # Create an L3 cache and connect it to the l3bus
     self.l3cache = L3Cache()
     self.l3cache.connectCPUSideBus(self.l3bus)
 
     # Connect the L3 cache to the membus
     self.l3cache.connectMemSideBus(self.membus)
+    self.codelet_interface = [CodeletInterface() for i in range(numCores)]
+    self.l2bus = [L2XBar(width = 192) for i in range(numCores)]
+    self.l2cache = [L2Cache() for i in range(numCores)]
 
-    # create the interrupt controller for the CPU
-    self.cpu.createInterruptController()
+    #single_mmu_cache = MMUCache()
+    #self.cpu[0].mmucache = single_mmu_cache
+    #self.cpu[0].mmucache.connectCPU(self.cpu[0])
+    #self.cpu[0].mmucache.connectBus(self.l2bus[0])
 
-    self.cpu.interrupts[0].pio = self.membus.mem_side_ports
-    self.cpu.interrupts[0].int_requestor = self.membus.cpu_side_ports
-    self.cpu.interrupts[0].int_responder = self.membus.mem_side_ports
+    for i in range(numCores):
+
+      # Create Codelet Interface for the CPU
+      # Make sure each codelet interface has it's own unique range
+      self.codelet_interface[i].queue_range = AddrRange(start = Addr(0x90000000) + 0x44 * i, 
+                                                 end = Addr(0x90000000)
+                                                 + 0x44 * (i+1)) #range should be size of codelet_t...
+
+      # Create an L1 instruction and data cache
+      self.cpu[i].icache = L1ICache()
+      # Make sure to initialize the version of L1DCache that connects to the CodeletInterface
+      self.cpu[i].dcache = L1DCacheCod()
+      self.cpu[i].mmucache = MMUCache()
+      #self.cpu[i].mmucache = single_mmu_cache
+
+      # Connect the instruction and mmu cache to CPU
+      self.cpu[i].icache.connectCPU(self.cpu[i])
+      # Connect data cache (L1) to CodeletInterface
+      self.cpu[i].dcache.connectCPU(self.codelet_interface[i])
+      #self.cpu[i].mmucache.connectCPU(self.cpu[i])
+      # Connect cpu dcache port to the Codelet Interface
+      # The icache port has already been connected directly to the L1 icache
+      self.cpu[i].dcache_port = self.codelet_interface[i].cpu_side_ports
+
+      # Forwarding non-codelet data requests through Codelet Interface to the L1 dcache
+      # Note that the CodeletInterface mem side port is already connected to dcache from
+      # above dcache.connectCPU call
+
+      # "Codelet side port" is a port that connects through the noncoherent Codelet bus instead of membus
+      # Connecting Codelet side ports between Codelet Interface and codelet bus
+      self.codelet_interface[i].cod_side_req_port = self.codbus.cpu_side_ports # For retiring Codelets 
+      # Connect Codelet response port to codelet bus -- called mem_side b/c it's a request port, practically it's on the CPU side
+      self.codelet_interface[i].cod_side_resp_port = self.codbus.mem_side_ports # For SU pushing Codelets to CU
+
+      # Create a memory bus, a coherent crossbar, in this case
+      #self.l2bus[i] = L2XBar(width = 192)
+
+      # Hook the CPU ports up to the l2bus
+      self.cpu[i].icache.connectBus(self.l2bus[i])
+      self.cpu[i].dcache.connectBus(self.l2bus[i])
+      #self.cpu[i].mmucache.connectBus(self.l2bus[i])
+
+      # Create an L2 cache and connect it to the l2bus
+      #self.l2cache[i] = L2Cache()
+      self.l2cache[i].connectCPUSideBus(self.l2bus[i])
+
+      # Connect the L2 cache to the l3bus
+      self.l2cache[i].connectMemSideBus(self.l3bus)
+
+      self.cpu[i].mmucache.connectCPU(self.cpu[i])
+      self.cpu[i].mmucache.connectBus(self.l2bus[i])
+
+      # create the interrupt controller for the CPU
+      self.cpu[i].createInterruptController()
+
+      self.cpu[i].interrupts[0].pio = self.membus.mem_side_ports
+      self.cpu[i].interrupts[0].int_requestor = self.membus.cpu_side_ports
+      self.cpu[i].interrupts[0].int_responder = self.membus.mem_side_ports
+
+      # provide cache paramters for verbatim CPU
+      if (self._CPUModel is VerbatimCPU):
+        # L1I-Cache
+        self.cpu[i].icache.size = '32kB'
+        self.cpu[i].icache.tag_latency = 4
+        self.cpu[i].icache.data_latency = 4
+        self.cpu[i].icache.response_latency = 1
+        # L1D-Cache
+        self.cpu[i].dcache.tag_latency = 4
+        self.cpu[i].dcache.data_latency = 4
+        self.cpu[i].dcache.response_latency = 1
+    #end for loop
+
+    # Create SU
+    self.su = SU()
+    tmp_su_range = AddrRange(start = Addr(0x90000000) + 0x44 * numCores,
+                                end = Addr(0x90000000) + 0x44 * numCores
+                                + 0x80) #random number to start with; roughly 8.
+                                # ends at 0x900000b0
+
+    self.su.su_ret_range = tmp_su_range #AddrRange(start = Addr(0x90000000) + 0x44 * numCores,
+                                #end = Addr(0x90000000) + 0x44 * numCores
+                                #+ 0x80) #random number to start with; roughly 8.
+                                # ends at 0x900000b0
+    
+    # set the correct SU range for all CodeletInterfaces
+    for ci in self.codelet_interface:
+      ci.su_ret_addr = tmp_su_range.start; 
+
+
+    # Read in the file name of the SCM program as a string to send to the SU as a parameter
+    self.su.scm_file_name = scmProgPath
+
+    # Connect SU ports to the codelet bus
+    self.su.cod_side_resp_port = self.codbus.mem_side_ports
+    # SU connects its request port to the codelet bus' cpu-side port (because it must connect to a response port) though it is physically not cpu-side
+    self.su.cod_side_req_port = self.codbus.cpu_side_ports
 
     self.createMemoryControllersDDR4()
-
-    # provide cache paramters for verbatim CPU
-    if (self._CPUModel is VerbatimCPU):
-      # L1I-Cache
-      self.cpu.icache.size = '32kB'
-      self.cpu.icache.tag_latency = 4
-      self.cpu.icache.data_latency = 4
-      self.cpu.icache.response_latency = 1
-      # L1D-Cache
-      self.cpu.dcache.tag_latency = 4
-      self.cpu.dcache.data_latency = 4
-      self.cpu.dcache.response_latency = 1
 
   # Memory latency: Using the smaller number from [3]: 96ns
   def createMemoryControllersDDR4(self):
@@ -201,19 +221,18 @@ class MyCodeletSystem(System):
 
     return ranges
 
-  def setTestBinary(self, binary_path):
+  def setTestBinary(self, binary_path, numCores):
     """Set up the SE process to execute the binary at binary_path"""
     from m5 import options
-    process = Process(cmd = [binary_path])
+    for i in range(numCores):
+      # Add int argument to the command for the process so they can use the correct
+      # CodeletInterface addresses
+      process = Process(cmd = [binary_path, str(i)], pid=100 + i)
+      self.cpu[i].workload = process
+      self.workload = SEWorkload.init_compatible(binary_path)
+      self.cpu[i].createThreads()
     #self.cpu.workload = Process(
     #                  cmd = [binary_path])
-    self.cpu.workload = process
-    #process.map(Addr(0x90000000),
-    #        Addr(0x90000000),
-    #        0x40000000,
-    #        False)
-    self.workload = SEWorkload.init_compatible(binary_path)
-    self.cpu.createThreads()
 
 #classic skylake system
 class MySystem(System):

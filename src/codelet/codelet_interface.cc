@@ -142,7 +142,8 @@ CodeletInterface::accessFunctional(PacketPtr pkt, int port_id)
     if (pkt->isRead()) {
         Addr reqAddr = pkt->getAddr(); // the address trying to be read
         auto data = pkt->getPtr<uint8_t>(); // pointer to data field of the packet
-        if (reqAddr >= Addr(0x90000000) + sizeof(runt_codelet_t)) { // if requested address is not in the activeCodelet space
+        //if (reqAddr >= Addr(0x90000000) + sizeof(runt_codelet_t)) { // if requested address is not in the activeCodelet space
+        if (reqAddr >= queueRange.start() + sizeof(runt_codelet_t)) { // if requested address is not in the activeCodelet space
             // CPU must be trying to read codeletAvailable flag
             pkt->makeResponse();
             std::memcpy(data, &codeletAvailable, pkt->getSize());
@@ -153,11 +154,12 @@ CodeletInterface::accessFunctional(PacketPtr pkt, int port_id)
         assert(codeletAvailable != 0); // activeCodelet read should never come when available flag is false
         runt_codelet_t toPop = activeCodelet; //get available codelet
         pkt->makeResponse();
-        Addr codOffset = reqAddr - Addr(0x90000000); // offset of field requested
+        //Addr codOffset = reqAddr - Addr(0x90000000); // offset of field requested
+        Addr codOffset = reqAddr - queueRange.start(); // offset of field requested
         char * activeCodStart = (char *) &activeCodelet;
         char * fieldPtr = activeCodStart + codOffset; // pointer to data field requested
         std::memcpy(data, fieldPtr, pkt->getSize()); //only copy data of size that was requested
-        DPRINTF(CodeletInterfaceQueue, "returning field at %lx (based on offset %lx) that has data %lx\n", (unsigned long) fieldPtr, (unsigned long)codOffset, (unsigned long)*data);
+        DPRINTF(CodeletInterfaceQueue, "returning field at %lx (based on offset %lx) that has data %lx\n", (unsigned long) fieldPtr, (unsigned long)codOffset, (unsigned long)*((unsigned long *)data));
         DPRINTF(CodeletInterfaceQueue, "activeCodelet is: %lx %p %p %p %s\n", (unsigned long) toPop.fire, toPop.dest, toPop.src1, toPop.src2, toPop.name);
         sendResponse(pkt); // send back to origin port 
         return(true);

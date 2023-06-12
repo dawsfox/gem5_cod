@@ -1,5 +1,6 @@
 #include "codelet.hh"
-#include "stdio.h"
+#include <stdio.h>
+#include <stdlib.h>
 //#include <type_traits>
 
 #define INTERFACE_ACTIVE_COD_PTR 0x90000000
@@ -74,16 +75,25 @@ void vecAdd(void * dest, void * src1, void * src2) {
 
 int main(int argc, char* argv[])
 {
+    printf("main -- begin\n");
+    unsigned cu_id = 0;
+    if(argc > 1) {
+        char * cu_id_str = (char *)argv[1];
+        cu_id = atoi(cu_id_str);
+    }
+    printf("main -- found CU id %d\n", cu_id);
     bool alive_sig = true;
     printf("register space has address %p\n", register_space);
     volatile unsigned * codeletAvailable;
     volatile runt_codelet_t * toFire;
     while(alive_sig) {
-        codeletAvailable = (volatile unsigned *) INTERFACE_COD_AVAIL_PTR;
-        toFire = (volatile runt_codelet_t *)INTERFACE_ACTIVE_COD_PTR;
-        if (codeletAvailable) {
-            printf("fire = %p\n", (void *)toFire->fire);
-            printf("codelet name: %s\n", toFire->name);
+        // increment the CodeletInterface-based addresses by 0x40 based on CU id
+        codeletAvailable = (volatile unsigned *) (((char *)INTERFACE_COD_AVAIL_PTR) + cu_id * 0x44U);
+        toFire = (volatile runt_codelet_t *) (((char *)INTERFACE_ACTIVE_COD_PTR) + cu_id * 0x44U);
+        if (*codeletAvailable) {
+            printf("CU %d: codelet available = %x\n", cu_id, *codeletAvailable);
+            printf("CU %d: fire = %p\n", cu_id, (void *)toFire->fire);
+            printf("CU %d: codelet name: %s\n", cu_id, toFire->name);
             if (toFire->fire != nullptr && toFire->fire != (fire_t)0xffffffffffffffff) {
                 toFire->fire(toFire->dest, toFire->src1, toFire->src2);
                 // this should perform a write operation to the activeCodelet in the CodeletInterface
@@ -91,10 +101,10 @@ int main(int argc, char* argv[])
                 toFire->fire = nullptr;
             } else if (toFire->fire == (fire_t)0xffffffffffffffff) {
                 alive_sig = false;
-                printf("program ending\n");
+                printf("CU %d: final codelet received\n", cu_id);
             }
         }
     }
-    printf("program returning\n");
+    printf("CU %d: program returning\n", cu_id);
     return(0);
 }
