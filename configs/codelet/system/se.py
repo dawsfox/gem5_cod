@@ -94,6 +94,8 @@ class MyCodeletSystem(System):
       self.codelet_interface[i].queue_range = AddrRange(start = Addr(0x90000000) + 0x44 * i, 
                                                  end = Addr(0x90000000)
                                                  + 0x44 * (i+1)) #range should be size of codelet_t...
+      
+      self.codelet_interface[i].cu_id = i
 
       # Create an L1 instruction and data cache
       self.cpu[i].icache = L1ICache()
@@ -174,6 +176,10 @@ class MyCodeletSystem(System):
     # set the correct SU range for all CodeletInterfaces
     for ci in self.codelet_interface:
       ci.su_ret_addr = tmp_su_range.start; 
+
+    self.su.num_cus = numCores
+
+    #self.su.interface_range_list = [ci.queue_range for ci in self.codelet_interface]
 
 
     # Read in the file name of the SCM program as a string to send to the SU as a parameter

@@ -249,8 +249,15 @@ class SU : public ClockedObject
     // Used on retirement to find the instruction to change state of 
     // Queue is fine for scm::SEQUENTIAL but won't work for superscalar or ooo
     // So let's use a map of fire function : instruction_state_pair *
-    //std::queue<scm::instruction_state_pair *> executingInsts;
-    std::map<fire_t, std::list<scm::instruction_state_pair *>> executingInsts;
+    //std::map<fire_t, std::list<scm::instruction_state_pair *>> executingInsts; //replaced by below
+
+    // Mapping of fire to instruction per CU for instructions that are either executing or already deployed
+    // to the Codelet Interface. Vector of pointers to fire:inst_pair maps
+    std::vector<std::map<fire_t, scm::instruction_state_pair *> *> executingInsts;
+
+    unsigned numCus; // number of CUs this SU is managing
+
+    unsigned cuToSchedule = 0; // used for round robin scheduling to CUs
 
     // Size should probably be made a SU param later
     // honestly will probably be able to get rid of this later

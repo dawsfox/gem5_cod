@@ -43,6 +43,12 @@ typedef struct runt_codelet_s {
 } runt_codelet_t;
 
 
+typedef struct retire_data_s {
+    runt_codelet_t toRet;
+    unsigned cuId;
+}  retire_data_t;
+
+
 } // namespace gem5
 
 #endif

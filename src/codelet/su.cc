@@ -229,8 +229,17 @@ SU::accessFunctional(PacketPtr pkt)
     // when the SU pushes to the queue as well. it's fine for now...
     panic_if(!pkt->isWrite(), "CodeletInterface should only request retirement from SU i.e. a write request");
     panic_if(executingInsts.empty(), "Codelet retirement arrived but no Codelets should be executing");
-    runt_codelet_t * retiredCod = pkt->getPtr<runt_codelet_t>();
+    //runt_codelet_t * retiredCod = pkt->getPtr<runt_codelet_t>(); // this will now be the codelet as well as a CU number (unsigned)
     //scm::instruction_state_pair * inst_pair = executingInsts.front(); // for queue version
+    retire_data_t * retireData = pkt->getPtr<retire_data_t>();
+    // modify state of the correct instruction
+    auto cu_map_ptr = executingInsts[retireData->cuId];
+    panic_if(cu_map_ptr->empty(), "Attempting to retire codelet but CU %d list is empty", retireData->cuId);
+    scm::instruction_state_pair * inst_pair = (*cu_map_ptr)[retireData->toRet.fire];
+    panic_if(!inst_pair, "Instruction pair fetched from executingInsts is nullptr");
+    inst_pair->second = scm::EXECUTION_DONE;
+    scm::decoded_instruction_t * inst = inst_pair->first;
+    /*
     void * dest, * src1, * src2;
     // get list based on fire function
     std::list<scm::instruction_state_pair *> listByFire = executingInsts[retiredCod->fire];
@@ -260,14 +269,17 @@ SU::accessFunctional(PacketPtr pkt)
         }
     }
     panic_if(itr == listByFire.end(), "SU received retirement for instruction it cannot find");
-    // Correct instruction found, set to done and remove from the list
-    (*itr)->second = scm::EXECUTION_DONE;
-    scm::decoded_instruction_t * inst = (*itr)->first;
-    listByFire.erase(itr);
-    std::string codName = inst->getInstruction();
+     */
 
-    DPRINTF(SU, "SU received retirement for codelet with %s %p %p %p\n", retiredCod->name, retiredCod->dest, retiredCod->src1, retiredCod->src2);
-    DPRINTF(SU, "decoded instruction for retirement: %s %p %p %p\n", codName.data(), dest, src1, src2);
+    // Correct instruction found, set to done and remove from the list
+    //(*itr)->second = scm::EXECUTION_DONE;
+    //scm::decoded_instruction_t * inst = (*itr)->first;
+    //listByFire.erase(itr);
+    std::string codName = inst->getInstruction();
+    runt_codelet_t retiredCod = retireData->toRet;
+    DPRINTF(SU, "SU received retirement for codelet with %s %p %p %p\n", retiredCod.name, retiredCod.dest, retiredCod.src1, retiredCod.src2);
+    DPRINTF(SU, "decoded instruction for retirement: %s\n", codName.data()); //%p %p %p\n", codName.data(), dest, src1, src2);
+    cu_map_ptr->erase(retireData->toRet.fire); //remove from executing insts list
     // assuming this is correct and this codelet matches with this instruction for now....
     // mark instruction as finished executing -- codelet is now properly retired
     //inst_pair->second = scm::instruction_state::EXECUTION_DONE;
@@ -519,11 +531,15 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
     DPRINTF(SUSCM, "toPush for comparison: %p\t%p\t%p\t%p\t%s\n", (void *)toPush->fire, toPush->dest, toPush->src1, toPush->src2, toPush->name);
     // send to CodeletInterface
     // at some point, we should avoid doing this work every single time unless SU isn't blocked
-    Addr interface_addr(0x90000000);
+    Addr interface_addr(0x90000000 + (cuToSchedule * 0x44));
     if(sendRequest(toPush, interface_addr)) {
         // add instruction that was sent to the list of instructions in execution
         //executingInsts.push(inst_pair); // for queue verions of executingInsts
-        executingInsts[tmp.fire].push_back(inst_pair);
+        //executingInsts[tmp.fire].push_back(inst_pair);
+        auto cu_map_ptr = executingInsts[cuToSchedule];
+        (*cu_map_ptr)[tmp.fire] = inst_pair;
+        DPRINTF(SULoader, "Adding inst_pair %p mapped to %lx for CU %d\n", (*cu_map_ptr)[tmp.fire], (unsigned long)tmp.fire, cuToSchedule);
+        cuToSchedule = (cuToSchedule + 1) % numCus; // enforces round robin
         return(true);
     } else {
         return(false);
@@ -540,9 +556,16 @@ SU::commitFromFD()
     memcpy(toPush, &finalCod, sizeof(runt_codelet_t));
     DPRINTF(SUSCM, "Sending final codelet: %p\t%s\n", (void *)toPush->fire, toPush->name);
     // send to CodeletInterface
-    // don't forget we also need to implement codelet retirement
-    Addr interface_addr(0x90000000);
+    // need to manage this better, with the SU having a count of CUs 
+    // and managing different instruction lists for them
+    Addr interface_addr(0x90000000 + (numCus-1) * 0x44);
     if(sendRequest(toPush, interface_addr)) {
+        if (numCus > 1) {
+            // numCus acts here like a number of active CUs
+            numCus--; //subtract num CUs so next tick the next interface will be sent to
+            return(false);
+        }
+        // only return true when ALL CUs are turned off
         return(true);
     } else {
         return(false);
@@ -648,6 +671,7 @@ SU::tick()
         fetchDecode->tickBehavior();
     } 
     // keep trying to send the final codelet until it succeeds to close CU runtime
+    // this will keep going until ALL CUs are turned off based on numCus
     else if (commitFromFD()) {
         finalCodSent = true;
     }
@@ -668,13 +692,21 @@ SU::SU(const SUParams &params) :
     system(params.system),
     sigLatency(params.sig_latency),
     capacity(params.size), //should make this more accurate later, right now it doesn't matter
-    //suSigRange(params.su_sig_range),
     suRetRange(params.su_ret_range),
     codReqPort(params.name + ".cod_side_req_port", this),
     codRespPort(params.name + ".cod_side_resp_port", this),
     respBlocked(false), reqBlocked(false), originalPacket(nullptr), 
-    waitingPortId(-1), stats(this)
+    waitingPortId(-1), 
+    numCus(params.num_cus),
+    //interfaceRangeList(params.interface_range_list),
+    stats(this)
 {
+    for (int i=0; i<numCus; i++) {
+        // prepare correct number of fire : inst state pair maps
+        //auto cu_inst_list = new std::map<fire_t, scm::instruction_state_pair *>;
+        //executingInsts.push_back(cu_inst_list);
+        executingInsts.push_back(new std::map<fire_t, scm::instruction_state_pair *>);
+    }
     finalCod.fire = (fire_t)0xffffffffffffffff;
     finalCod.dest = nullptr;
     finalCod.src1 = nullptr;

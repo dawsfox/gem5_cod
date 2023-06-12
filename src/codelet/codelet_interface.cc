@@ -20,6 +20,7 @@ CodeletInterface::CodeletInterface(const CodeletInterfaceParams &params) :
     genLatency(params.gen_latency),
     capacity(params.size / CODELET_SIZE),
     queueRange(params.queue_range),
+    cuId(params.cu_id),
     suRetAddr(params.su_ret_addr),
     memPort(params.name + ".mem_side_port", this),
     codReqPort(params.name + "cod_side_req_port", this),
@@ -195,8 +196,10 @@ CodeletInterface::accessFunctional(PacketPtr pkt, int port_id)
     // and CodRespPort in SU. Maybe flow issues if we forward from here, we'll see
     else if (pkt->isWrite()) {
         // copy active codelet to send to SU so it can retire the associated instruction
-        runt_codelet_t * toRetire = new runt_codelet_t;
+        //runt_codelet_t * toRetire = new runt_codelet_t;
+        retire_data_t * toRetire = new retire_data_t;
         memcpy(toRetire, &activeCodelet, sizeof(runt_codelet_t));
+        toRetire->cuId = cuId; 
         // perform local codelet retirement; stage new codelet or set codeletAvailable to 0
         if (codQueue.empty()) { //if the queue is empty, no more codelets currently available
             DPRINTF(CodeletInterfaceQueue, "CPU retiring Codelet; no more Codelets available\n");
@@ -216,17 +219,20 @@ CodeletInterface::accessFunctional(PacketPtr pkt, int port_id)
         MemCmd cmd;
         cmd = MemCmd::WriteReq;
         // Create a new packet that is size of codelet
-        PacketPtr new_pkt = new Packet(pkt->req, cmd, sizeof(runt_codelet_t));
+        //PacketPtr new_pkt = new Packet(pkt->req, cmd, sizeof(runt_codelet_t));
+        PacketPtr new_pkt = new Packet(pkt->req, cmd, sizeof(retire_data_t));
         // i believe this constructor modifies the address inherently to be 
         // block aligned, we will have to make sure that doesn't ruin the address to the SU
         //new_pkt->allocate();
-        auto data = pkt->getPtr<runt_codelet_t>();
+        //auto data = pkt->getPtr<runt_codelet_t>();
+        auto data = pkt->getPtr<retire_data_t>();
         unsigned int size = new_pkt->getSize();
-        assert(size == sizeof(runt_codelet_t));
+        //assert(size == sizeof(runt_codelet_t));
         //memcpy(data, toRetire, sizeof(runt_codelet_t));
         //DPRINTF(CodeletInterfaceQueue, "codelet toRetire check");
         new_pkt->setAddr(suRetAddr);
-        new_pkt->dataDynamic<runt_codelet_t>(toRetire);
+        //new_pkt->dataDynamic<runt_codelet_t>(toRetire);
+        new_pkt->dataDynamic<retire_data_t>(toRetire);
         codReqPort.sendPacket(new_pkt); //send new packet to SU
         // do not send response here: the response will be handled when the CodeletInterface receives
         // the response from the SU

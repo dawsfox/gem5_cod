@@ -17,6 +17,7 @@ class CodeletInterface(ClockedObject):
     cod_side_resp_port = ResponsePort("Response port for pushing Codelets from SU")
 
     queue_range = Param.AddrRange(AddrRange(start = Addr(0x90000000), end = Addr(0x90000000) + 0x40), "Address range used by local Codelet queue")
+    cu_id = Param.Unsigned(0, "ID number for the CU the codelet interface represents")
     su_ret_addr = Param.Addr(0x90000040, "Addres used for codelet retirement packets forwarded to SU")
     queue_latency = Param.Cycles(1, "Cycles delayed to process Codelet queue actions")
     gen_latency = Param.Cycles(0, "Cycles delayed for passing through requests")

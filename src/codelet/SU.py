@@ -13,8 +13,11 @@ class SU(ClockedObject):
 
     scm_file_name = Param.String("File name of the SCM program to be loaded into the SU")
 
-    #su_sig_range = Param.AddrRange("Address range used by SU for dependency signalling")
     su_ret_range = Param.AddrRange("Address range used by SU for codelet retirement")
+
+    num_cus = Param.Unsigned(1, "Number of CUs this SU is managing")
+
+    #interface_range_list = Param.AddrRangeList("List of address ranges for the CodeletInterfaces of the system")
 
     sig_latency = Param.Cycles(1, "Cycles delayed for signaling syncSlots")
     size = Param.MemorySize("16kB", "SyncSlot storage size")

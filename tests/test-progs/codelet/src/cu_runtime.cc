@@ -69,8 +69,9 @@ void vecAdd(void * dest, void * src1, void * src2) {
     int * vecSrc2 = (int *) src2;
     for (int i=0; i<1024; i++) {
         vecDest[i] = vecSrc1[i] + vecSrc2[i];
-        printf("it %d: %d + %d = %d\n", i, vecSrc1[i], vecSrc2[i], vecDest[i]);
+        //printf("it %d: %d + %d = %d\n", i, vecSrc1[i], vecSrc2[i], vecDest[i]);
     }
+    printf("vecAdd done\n");
 }
 
 int main(int argc, char* argv[])

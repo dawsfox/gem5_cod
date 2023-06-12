@@ -288,6 +288,8 @@ class CodeletInterface : public ClockedObject
     /// Address range of the local Codelet queue
     AddrRange queueRange;
 
+    unsigned cuId;
+
     // address that should be used for codelet retirement requests sent to the SU
     Addr suRetAddr;
 
