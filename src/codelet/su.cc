@@ -138,6 +138,12 @@ SU::readRegSpacePtr()
         //DPRINTF(SULoader, "Register space root located at %p; points to runtime space %p\n", prog_data->d_buf, reg_space_root_ptr);
         // program REALLY hates printing reg_space_root_ptr as %p for some reason. it breaks the printing....
         DPRINTF(SULoader, "register space starts at: %x\n", (long unsigned)reg_space_root_ptr);
+        // attempting to map register space for the CU processes
+        long unsigned reg_space_start = (long unsigned) reg_space_root_ptr;
+        for (int i=0; i < numCus; i++) {
+            Process * process_ptr = system->threads[i]->getProcessPtr();
+            process_ptr->map(Addr(reg_space_start), Addr(reg_space_start), REG_FILE_SIZE_KB * 1000);
+        }
         return(reg_space_root_ptr);
     }
     return(nullptr);
