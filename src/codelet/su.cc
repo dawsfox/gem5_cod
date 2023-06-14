@@ -138,12 +138,14 @@ SU::readRegSpacePtr()
         //DPRINTF(SULoader, "Register space root located at %p; points to runtime space %p\n", prog_data->d_buf, reg_space_root_ptr);
         // program REALLY hates printing reg_space_root_ptr as %p for some reason. it breaks the printing....
         DPRINTF(SULoader, "register space starts at: %x\n", (long unsigned)reg_space_root_ptr);
-        // attempting to map register space for the CU processes
+        // attempting to map register space for the CU processes ... it didn't work because reg space isn't aligned to a page boundary
+        /*
         long unsigned reg_space_start = (long unsigned) reg_space_root_ptr;
         for (int i=0; i < numCus; i++) {
             Process * process_ptr = system->threads[i]->getProcessPtr();
             process_ptr->map(Addr(reg_space_start), Addr(reg_space_start), REG_FILE_SIZE_KB * 1000);
         }
+         */
         return(reg_space_root_ptr);
     }
     return(nullptr);
@@ -623,13 +625,14 @@ SU::init()
 {
     sendRangeChange();    
     // set reg space to correct address in runtime address spaced based on ELF section
-    regSpace = readRegSpacePtr();
+    //regSpace = readRegSpacePtr();
     // analyze elf section data to get user codelets, they will be used 
     // by inst_mem to set scm::codelets' fire functions based on users'
     unsigned count = getCodelets();
     // Initialize scm modules
     controlStore = new scm::control_store_module(1);
-    regFile = new scm::reg_file_module((scm::register_file_t *)regSpace);
+    //regFile = new scm::reg_file_module((scm::register_file_t *)regSpace);
+    regFile = new scm::reg_file_module((scm::register_file_t *)0x90001000);
     instructionMem = new scm::inst_mem_module(scmFileName, regFile, this);
     fetchDecode = new scm::fetch_decode_module(instructionMem, controlStore, &aliveSig, ilpMode, this);
     /* TODO: change SU fields that are scm modules to be pointers to the SCM modules

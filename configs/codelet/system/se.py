@@ -48,7 +48,9 @@ class MyCodeletSystem(System):
     mem_size = '32GB'
     self.mem_ranges = [AddrRange('100MB'), # For kernel
                       AddrRange(0xC0000000, size=0x100000), # For I/0
-                      AddrRange(Addr('4GB'), size = mem_size) # All data
+                      AddrRange(Addr('4GB'), size = mem_size), # All data
+                      # Maybe add a range here for the register space?
+                      AddrRange(0x90001000, size=12288000)
                         ]
 
     #self.cpu = self._CPUModel()
@@ -237,8 +239,6 @@ class MyCodeletSystem(System):
       self.cpu[i].workload = process
       self.workload = SEWorkload.init_compatible(binary_path)
       self.cpu[i].createThreads()
-    #self.cpu.workload = Process(
-    #                  cmd = [binary_path])
 
 #classic skylake system
 class MySystem(System):

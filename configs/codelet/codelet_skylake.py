@@ -78,6 +78,11 @@ for i in range(args.num_cores):
             #0xf0,
             0x44 * args.num_cores + 0x80, #Extending to cover space of multiple CodeletInterfaces and the SU 
             False)
+    
+    system.cpu[i].workload[0].map(Addr(0x90001000),
+            Addr(0x90001000),
+            12288000); # Attempting to map a fixed register space 
+            # Size comes from the SCM register config
 
 print("Beginning simulation!")
 exit_event = m5.simulate()

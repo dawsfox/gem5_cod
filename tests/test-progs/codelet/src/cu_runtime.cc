@@ -28,9 +28,9 @@ user_codelet_t codelet_graph[CODELET_NUM] __attribute__ ((section(".codelet_prog
                                                                                            {"VecInitTwo_2048L", vecInitTwo},
                                                                                            {"VecAdd_2048L", vecAdd}};
 
-unsigned char register_space[REG_FILE_SIZE_KB * 1000];
+//unsigned char register_space[REG_FILE_SIZE_KB * 1000];
 
-unsigned char * register_space_ptr __attribute__ ((section(".register_space_ptr"))) = register_space;
+//unsigned char * register_space_ptr __attribute__ ((section(".register_space_ptr"))) = register_space;
 
 void helloCodFire(void * dest, void * src1, void * src2) {
     printf("hi from inside codelet fire function\n");
@@ -52,7 +52,7 @@ void vecInitOne(void * dest, void * src1, void * src2) {
     printf("running vecInitOne\n");
     printf("vecInitOne has dest: %p, src1: %p, src2: %p\n", dest, src1, src2);
     int * vecDest = (int *) dest;
-    for (int i=0; i<8; i++) {
+    for (int i=0; i<2048; i++) {
         vecDest[i] = i;
     }
 }
@@ -61,7 +61,7 @@ void vecInitTwo(void * dest, void * src1, void * src2) {
     printf("running vecInitTwo\n");
     printf("vecInitTwo has dest: %p, src1: %p, src2: %p\n", dest, src1, src2);
     int * vecDest = (int *) dest;
-    for (int i=0; i<8; i++) {
+    for (int i=0; i<2048; i++) {
         vecDest[i] = i + i;
     }
 }
@@ -73,9 +73,11 @@ void vecAdd(void * dest, void * src1, void * src2) {
     int * vecDest = (int *) dest;
     int * vecSrc1 = (int *) src1;
     int * vecSrc2 = (int *) src2;
-    for (int i=0; i<8; i++) {
+    for (int i=0; i<2048; i++) {
         vecDest[i] = vecSrc1[i] + vecSrc2[i];
-        //printf("it %d: %d + %d = %d\n", i, vecSrc1[i], vecSrc2[i], vecDest[i]);
+        if (i % 128 == 0) {
+            printf("it %d: %d + %d = %d\n", i, vecSrc1[i], vecSrc2[i], vecDest[i]);
+        }
     }
     printf("vecAdd done\n");
 }
@@ -90,7 +92,7 @@ int main(int argc, char* argv[])
     }
     printf("main -- found CU id %d\n", cu_id);
     bool alive_sig = true;
-    printf("register space has address %p\n", register_space);
+    //printf("register space has address %p\n", register_space);
     volatile unsigned * codeletAvailable;
     volatile runt_codelet_t * toFire;
     while(alive_sig) {
