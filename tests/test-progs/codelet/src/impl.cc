@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "codelet.hh"
+#include "../codelet.hh"
 #include "impl.hh"
 
 #define CODELET_NUM 6

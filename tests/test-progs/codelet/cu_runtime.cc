@@ -1,10 +1,6 @@
-#include "codelet.hh"
 #include <stdio.h>
 #include <stdlib.h>
-#include "impl.hh"
-
-//unsigned char register_space[REG_FILE_SIZE_KB * 1000];
-//unsigned char * register_space_ptr __attribute__ ((section(".register_space_ptr"))) = register_space;
+#include "codelet.hh"
 
 int main(int argc, char* argv[])
 {
