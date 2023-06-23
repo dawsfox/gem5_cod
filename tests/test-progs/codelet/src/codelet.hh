@@ -1,22 +1,10 @@
 #ifndef __CODELET_CODELET_HH__
 #define __CODELET_CODELET_HH__
 
-/*
-class Codelet 
-{
-    private:
-        unsigned id;
-    public:
-        // replace virtual function w/ function pointer
-        virtual void fire();
-        Codelet(unsigned id) :
-            id(id)
-            { }
+#define INTERFACE_ACTIVE_COD_PTR 0x90000000
+#define INTERFACE_COD_AVAIL_PTR INTERFACE_ACTIVE_COD_PTR + sizeof(runt_codelet_t)
 
-}; //class Codelet
-*/
 // typedef for fire function (function pointer)
-// TODO: change fire function to take src1, src2, and dest as params in an agreed upon order
 typedef void (*fire_t)(void * dest, void * src1, void * src2);
 
 /* This structure is used when the user is creating Codelets that will be referenced in the Codelet program
@@ -55,33 +43,5 @@ typedef struct codelet_s {
     // 64 is a good number because it won't cause padding
     char name[32];
 } codelet_t;
-
-/*
-class Codelet {
-    private:
-        //codelet_t cod_data;
-        fire_t fire;
-        unsigned id;
-        unsigned dest;
-        unsigned src1;
-        unsigned src2;
-    public:
-        Codelet(fire_t fire, unsigned int id) :
-            fire(fire), id(id)
-            { }
-        
-        Codelet(fire_t fire, unsigned int dest, unsigned int id, unsigned int src1, unsigned int src2) :
-            fire(fire), id(id), dest(dest), src1(src1), src2(src2)
-            { }
-};
- */
-
-// define a tester function here
-void helloCodFire(void * dest, void * src1, void * src2);
-void helloCodFireTwo(void * dest, void * src1, void * src2);
-void helloCodFireThree(void * dest, void * src1, void * src2);
-void vecInitOne(void * dest, void * src1, void * src2);
-void vecInitTwo(void * dest, void * src1, void * src2);
-void vecAdd(void * dest, void * src1, void * src2);
 
 #endif
