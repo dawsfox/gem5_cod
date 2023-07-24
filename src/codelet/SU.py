@@ -10,6 +10,7 @@ class SU(ClockedObject):
     #Codelet side response port for receiving Codelets from SU
     cod_side_resp_port = ResponsePort("Response ports for handling decDep signaling and Codelet retiring")
     cod_side_req_port =  RequestPort("Request port for pushing Codelets to CUs")
+    mem_side_port = RequestPort("Request port for reading/writing register contents directly")
 
     scm_file_name = Param.String("File name of the SCM program to be loaded into the SU")
 

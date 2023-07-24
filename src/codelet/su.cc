@@ -3,6 +3,7 @@
 #include "debug/SULoader.hh"
 #include "debug/SUCod.hh"
 #include "debug/SUSCM.hh"
+#include "debug/SUMem.hh"
 #include "sim/system.hh"
 #include "sim/process.hh"
 #include "base/loader/elf_object.hh"
@@ -581,7 +582,180 @@ SU::commitFromFD()
 
 }
 
+bool
+SU::fetchOperandsFromMem(scm::instruction_state_pair *inst_pair)
+{
+    stallingInst = inst_pair;
+    scm::decoded_instruction_t * inst = inst_pair->first;
+    assert(inst_pair->second == scm::instruction_state::STALL); //should be stalling while we fetch data for it
+    long unsigned src1_addr = (long unsigned) inst->getOp2().value.reg.reg_ptr;
+    // ---------------- Packet building for src1 --------------------------------------------------------------    
+    // need to make a request object first to pass to the packet
+    // let's say the SU has requestor ID 55..... if not, make it invalid somehow
+    Request::Flags reqFlags(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
+    const RequestPtr src1_req = std::shared_ptr<Request>(new Request(Addr(src1_addr), sizeof(uint64_t), reqFlags, reqId));
+    PacketPtr src1_pkt = Packet::createRead(src1_req);
+    src1_pkt->dataStatic<uint64_t>(new uint64_t);
+    DPRINTF(SUMem, "Fetching data from addr %lx for SCM instruction\n", src1_addr);
+    memPort.sendTimingReq(src1_pkt);
+    // not sure if we will have to check if the timing request succeeds...
+    // ---------------- Packet building for src2 --------------------------------------------------------------    
+    // src2 is immediate so we don't have to fetch it
+    if (inst->getOp3().type != scm::operand_t::IMMEDIATE_VAL) {
+        long unsigned src2_addr = (long unsigned) inst->getOp3().value.reg.reg_ptr;
+        Request::Flags reqFlags(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
+        const RequestPtr src2_req = std::shared_ptr<Request>(new Request(Addr(src2_addr), sizeof(uint64_t), reqFlags, reqId));
+        PacketPtr src2_pkt = Packet::createRead(src2_req);
+        src2_pkt->dataStatic<uint64_t>(new uint64_t);
+        DPRINTF(SUMem, "Fetching data from addr %lx for SCM instruction\n", src2_addr);
+        memPort.sendTimingReq(src2_pkt);
+    }
+    return(true);
+}
+
+bool
+SU::writebackOpToMem(uint64_t * result)
+{
+    if (regCopyState != FETCH_COMPLETE) {
+        return(false);
+    } else {
+        regCopyState = WRITING;
+        scm::decoded_instruction_t * inst = stallingInst->first;
+        assert(stallingInst->second == scm::instruction_state::STALL); //should be stalling while we fetch data for it
+        long unsigned dest_addr = (long unsigned) inst->getOp1().value.reg.reg_ptr;
+        Request::Flags reqFlags(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
+        const RequestPtr dest_req = std::shared_ptr<Request>(new Request(Addr(dest_addr), sizeof(uint64_t), reqFlags, reqId));
+        PacketPtr dest_pkt = Packet::createWrite(dest_req);
+        dest_pkt->dataStatic<uint64_t>(result);
+        // TODO: assess if there is an issue here with passing reference of parameter; probably this function should take a pointer
+        DPRINTF(SUMem, "Writing back data %lx to addr %lx for SCM instruction\n", *result, dest_addr);
+        memPort.sendTimingReq(dest_pkt);
+        return(true);
+    }
+}
+
+// this is only called when the SU receives a response from the memPort
+// which means a SCM register write is being acknowledged or
+// an SCM register read is returning data, so we need to organize it
+void
+SU::recvTimingResp(PacketPtr pkt)
+{
+    if (regCopyState == EMPTY) { // no transactions complete for current instruction
+        // this response should contain read data
+        assert(pkt->isResponse() && pkt->hasData());
+        uint64_t * dataPtr = pkt->getPtr<uint64_t>();
+        memcpy(&(localRegCopies[8]), dataPtr, sizeof(uint64_t));
+        DPRINTF(SU, "data packet from register file: %s\n", pkt->print());
+        DPRINTF(SU, "data fetched from register file for op1 (first source): %lx\n", *((long unsigned *)&localRegCopies[8]));
+        regCopyState = OP1_FETCHED;
+        // if second op is immediate, then the first fetch completed means all fetches are complete
+        if (stallingInst->first->getOp3().type == scm::operand_t::IMMEDIATE_VAL) {
+            regCopyState = FETCH_COMPLETE;
+        }
+    } else if (regCopyState == OP1_FETCHED) {
+        assert(pkt->isResponse() && pkt->hasData());
+        uint64_t * dataPtr = pkt->getPtr<uint64_t>();
+        memcpy(&(localRegCopies[16]), dataPtr, sizeof(uint64_t));
+        DPRINTF(SU, "data fetched from register file for op2 (second source): %lx\n", *((long unsigned *)&localRegCopies[16]));
+        regCopyState = FETCH_COMPLETE;
+    } else if (regCopyState == FETCH_COMPLETE || regCopyState == WRITING) {
+        // Looks like writes aren't working correctly -- or maybe the reads; values aren't persisting properly in some way
+        assert(pkt->isResponse()); // double check this -- removed hasData() b/c don't know if write responses do or not
+        //uint64_t * dataPtr = pkt->getPtr<uint64_t>();
+        //memcpy(&(localRegCopies[16]), dataPtr, sizeof(uint64_t));
+        DPRINTF(SU, "data written to register file for op3 (dest)\n");
+        regCopyState = TRANS_COMPLETE;
+    }
+}
+
 // -------------------------------------------------------------------------
+
+bool
+SU::MemSidePort::recvTimingResp(PacketPtr pkt)
+{
+    su->recvTimingResp(pkt);
+    return true;
+}
+
+// Don't think snoops should ever actually occur on this port, but for now just in case
+// Express snooping requests to memside port
+/*
+void
+SU::MemSidePort::recvTimingSnoopReq(PacketPtr pkt)
+{
+    // Snoops shouldn't happen when bypassing caches
+    assert(!cache->system->bypassCaches());
+
+    // handle snooping requests
+    cache->recvTimingSnoopReq(pkt);
+}
+
+Tick
+SU::MemSidePort::recvAtomicSnoop(PacketPtr pkt)
+{
+    // Snoops shouldn't happen when bypassing caches
+    assert(!cache->system->bypassCaches());
+
+    return cache->recvAtomicSnoop(pkt);
+}
+
+void
+SU::MemSidePort::recvFunctionalSnoop(PacketPtr pkt)
+{
+    // Snoops shouldn't happen when bypassing caches
+    assert(!cache->system->bypassCaches());
+
+    // functional snoop (note that in contrast to atomic we don't have
+    // a specific functionalSnoop method, as they have the same
+    // behaviour regardless)
+    cache->functionalAccess(pkt, false);
+}
+
+void
+SU::CacheReqPacketQueue::sendDeferredPacket()
+{
+    // sanity check
+    assert(!waitingOnRetry);
+
+    // there should never be any deferred request packets in the
+    // queue, instead we resly on the cache to provide the packets
+    // from the MSHR queue or write queue
+    assert(deferredPacketReadyTime() == MaxTick);
+
+    // check for request packets (requests & writebacks)
+    QueueEntry* entry = cache.getNextQueueEntry();
+
+    if (!entry) {
+        // can happen if e.g. we attempt a writeback and fail, but
+        // before the retry, the writeback is eliminated because
+        // we snoop another cache's ReadEx.
+    } else {
+        // let our snoop responses go first if there are responses to
+        // the same addresses
+        if (checkConflictingSnoop(entry->getTarget()->pkt)) {
+            return;
+        }
+        waitingOnRetry = entry->sendPacket(cache);
+    }
+
+    // if we succeeded and are not waiting for a retry, schedule the
+    // next send considering when the next queue is ready, note that
+    // snoop responses have their own packet queue and thus schedule
+    // their own events
+    if (!waitingOnRetry) {
+        schedSendEvent(cache.nextQueueReadyTime());
+    }
+}
+*/
+
+SU::MemSidePort::MemSidePort(const std::string &_name,
+                                    SU *_su,
+                                    const std::string &_label)
+    : SURequestPort(_name, _su, _reqQueue, _snoopRespQueue),
+      _reqQueue(*_su, *this, _snoopRespQueue, _label),
+      _snoopRespQueue(*_su, *this, true, _label), su(_su)
+{
+}
 
 void
 SU::CodSideReqPort::recvRangeChange()
@@ -699,14 +873,17 @@ SU::SU(const SUParams &params) :
                 false, Event::CPU_Tick_Pri),
     aliveSig(true),
     system(params.system),
+    reqId(params.system->getRequestorId(this)),
     sigLatency(params.sig_latency),
     capacity(params.size), //should make this more accurate later, right now it doesn't matter
     suRetRange(params.su_ret_range),
     codReqPort(params.name + ".cod_side_req_port", this),
     codRespPort(params.name + ".cod_side_resp_port", this),
+    memPort(params.name + ".mem_side_port", this, "MemSidePort"),
     respBlocked(false), reqBlocked(false), originalPacket(nullptr), 
     waitingPortId(-1), 
     numCus(params.num_cus),
+    regCopyState(EMPTY),
     //interfaceRangeList(params.interface_range_list),
     stats(this)
 {
@@ -721,6 +898,9 @@ SU::SU(const SUParams &params) :
     finalCod.src1 = nullptr;
     finalCod.src2 = nullptr;
     strcpy(finalCod.name, "finalCodelet");
+    //localRegCopies = (unsigned char *) malloc(sizeof(uint64_t) * 3); //enough room for 3 64b registers
+    localRegCopies = (unsigned char *) new uint64_t[3]; // size enough for 3 long unsigneds but unsigned char *
+    // so that they are byte accessible like FD arithmetic instructions expect
     DPRINTF(SULoader, "SCM Program loaded from %s", scmFileName);
 }
 
@@ -737,6 +917,10 @@ SU::getPort(const std::string &if_name, PortID idx)
                  "Cod side resp of SU not a vector port");
         // We should have already created all of the ports in the constructor
         return(codRespPort);
+    } else if (if_name == "mem_side_port") {
+        panic_if(idx != InvalidPortID,
+                 "Mem side port of SU not a vector port");
+        return(memPort);
     } else {
         // pass it along to our super class
         return(ClockedObject::getPort(if_name, idx));

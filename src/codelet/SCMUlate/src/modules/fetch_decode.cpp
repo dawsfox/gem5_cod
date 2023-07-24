@@ -269,6 +269,30 @@ int scm::fetch_decode_module::tickBehavior()
           stall++;
           //ITT_TASK_BEGIN(fetch_decode_module_behavior, checkMarkInstructionToSched);
           instructionLevelParallelism.checkMarkInstructionToSched(current_pair);
+         
+          // if this is a stalled arithmetic instruction and SU isn't currently fetching, trigger the fetch
+          if (current_pair->first->getType() == BASIC_ARITH_INST && owner->getStallingInst() == nullptr) {
+            fetchOperandsFromMem(current_pair);
+          }
+          // if this instruction is stalling because SU is currently fetching reg data for it, make sure it stays stalling
+          // and perform further calls
+          else if (current_pair->first->getType() == BASIC_ARITH_INST && owner->getStallingInst() == current_pair) {
+            current_pair->second = instruction_state::STALL;
+            // if operands are done being fetched by SU
+            if (owner->getCopyState() == gem5::SU::FETCH_COMPLETE) {
+              // TODO: need to get the result here from the execution to send the data for write back as a parameter and modify the execute function
+              uint64_t result = *((uint64_t *)execArithInstFromCopy());
+              uint64_t * result_ptr = new uint64_t;
+              memcpy(result_ptr, &result, sizeof(uint64_t));
+              //executeArithmeticInstructions(current_pair->first); // perform actual computation based on SU's local register copies
+              owner->writebackOpToMem(result_ptr); // trigger the writeback operation
+            } else if (owner->getCopyState() == gem5::SU::TRANS_COMPLETE) { // if full transaction is complete, i.e. writeback is done
+              // set instruction to complete
+              current_pair->second = instruction_state::EXECUTION_DONE;
+              // clear the SU's stalling instruction and reset copy state since we're done
+              owner->clearStallingInst();
+            }
+          } 
           //ITT_TASK_END(checkMarkInstructionToSched);
           if (current_pair->second == instruction_state::STALL)
             this->stallingInstruction = current_pair;
@@ -303,8 +327,13 @@ int scm::fetch_decode_module::tickBehavior()
               break;
             case BASIC_ARITH_INST:
               SCMULATE_INFOMSG(4, "Scheduling a BASIC_ARITH_INST %s", current_pair->first->getFullInstruction().c_str());
-              executeArithmeticInstructions(current_pair->first);
-              current_pair->second = instruction_state::EXECUTION_DONE;
+              //executeArithmeticInstructions(current_pair->first);
+              //current_pair->second = instruction_state::EXECUTION_DONE;
+              // Arithmetic instructions now have to stall so the SU has time to fetch the data from memory, perform the operation, and write back
+              current_pair->second = instruction_state::STALL; // set to stall in instruction mem
+              if (owner->getStallingInst() == nullptr) { //stallingInst being nullptr means no fetch is going on in the SU currently
+                fetchOperandsFromMem(current_pair); // trigger register reading operation in the SU
+              }
               break;
             case EXECUTE_INST:
               SCMULATE_INFOMSG(4, "Scheduling an EXECUTE_INST %s", current_pair->first->getFullInstruction().c_str());
@@ -549,6 +578,216 @@ void scm::fetch_decode_module::executeControlInstruction(scm::decoded_instructio
     return;
   }
 }
+
+unsigned char * scm::fetch_decode_module::execArithInstFromCopy()
+{
+  scm::decoded_instruction_t * inst = owner->getStallingInst()->first;
+  /////////////////////////////////////////////////////
+  ///// ARITHMETIC LOGIC FOR THE ADD INSTRUCTION
+  /////////////////////////////////////////////////////
+  if (inst->getOpcode() == ADD_INST.opcode)
+  {
+    decoded_reg_t reg1 = inst->getOp1().value.reg;
+    //decoded_reg_t reg2 = inst->getOp2().value.reg;
+    // Second operand may be register or immediate. We assumme immediate are no longer than a long long
+    if (inst->getOp3().type == scm::operand_t::IMMEDIATE_VAL)
+    {
+      // IMMEDIATE ADDITION CASE
+      // TODO: Think about the signed option of these operands
+      uint64_t immediate_val = inst->getOp3().value.immediate;
+
+      //unsigned char *reg2_ptr = reg2.reg_ptr;
+      unsigned char *reg2_ptr = owner->getLocalSrc1Ptr();
+      SCMULATE_INFOMSG(3, "Src1 copy is : %lx", *((uint64_t *)reg2_ptr));
+      SCMULATE_INFOMSG(3, "Immediate value is : %lx", immediate_val);
+
+      // Where to store the result
+      //unsigned char *reg1_ptr = reg1.reg_ptr;
+      unsigned char *reg1_ptr = owner->getLocalDestPtr();
+      int32_t size_reg_bytes = reg1.reg_size_bytes;
+      assert(size_reg_bytes <= 8);
+
+      // Addition
+      uint32_t temp = 0;
+      //for (int32_t i = size_reg_bytes - 1; i >= 0; --i)
+      for (int32_t i=0; i < size_reg_bytes; ++i)
+      {
+        temp += (immediate_val & 255) + (reg2_ptr[i]);
+        reg1_ptr[i] = temp & 255;
+        immediate_val >>= 8;
+        // Carry on
+        temp = temp > 255 ? 1 : 0;
+        SCMULATE_INFOMSG(3, "Intermediate dest is : %lx", *((uint64_t *)reg1_ptr));
+      }
+      SCMULATE_INFOMSG(3, "Dest copy is : %lx", *((uint64_t *)reg1_ptr));
+      return reg1_ptr;
+    }
+    else
+    {
+      // REGISTER REGISTER ADD CASE
+      decoded_reg_t reg3 = inst->getOp3().value.reg;
+      //unsigned char *reg2_ptr = reg2.reg_ptr;
+      unsigned char *reg2_ptr = owner->getLocalSrc1Ptr();
+      //unsigned char *reg3_ptr = reg3.reg_ptr;
+      unsigned char *reg3_ptr = owner->getLocalSrc2Ptr();
+      SCMULATE_INFOMSG(3, "Src1 copy is : %lx", *((uint64_t *)reg2_ptr));
+      SCMULATE_INFOMSG(3, "Src2 copy is : %lx", *((uint64_t *)reg3_ptr));
+
+      // Where to store the result
+      //unsigned char *reg1_ptr = reg1.reg_ptr;
+      unsigned char *reg1_ptr = owner->getLocalDestPtr();
+      int32_t size_reg_bytes = reg1.reg_size_bytes;
+      assert(size_reg_bytes <= 8);
+
+      // Addition
+      int temp = 0;
+      for (int32_t i = size_reg_bytes - 1; i >= 0; --i)
+      {
+        temp += (reg3_ptr[i]) + (reg2_ptr[i]);
+        reg1_ptr[i] = temp & 255;
+        // Carry on
+        temp = temp > 255 ? 1 : 0;
+      }
+      SCMULATE_INFOMSG(3, "Dest copy is : %lx", *((uint64_t *)reg1_ptr));
+      return reg1_ptr;
+    }
+  }
+
+  /////////////////////////////////////////////////////
+  ///// ARITHMETIC LOGIC FOR THE SUB INSTRUCTION
+  /////////////////////////////////////////////////////
+  if (inst->getOpcode() == SUB_INST.opcode)
+  {
+    decoded_reg_t reg1 = inst->getOp1().value.reg;
+    decoded_reg_t reg2 = inst->getOp2().value.reg;
+
+    // Second operand may be register or immediate. We assumme immediate are no longer than a long long
+    if (inst->getOp3().type == scm::operand_t::IMMEDIATE_VAL)
+    {
+      // IMMEDIATE ADDITION CASE
+      // TODO: Think about the signed option of these operands
+      uint16_t immediate_val = inst->getOp3().value.immediate;
+
+      unsigned char *reg2_ptr = reg2.reg_ptr;
+
+      // Where to store the result
+      unsigned char *reg1_ptr = reg1.reg_ptr;
+      int32_t size_reg_bytes = reg1.reg_size_bytes;
+
+      // Subtraction
+      uint32_t temp = 0;
+      for (int32_t i = size_reg_bytes - 1; i >= 0; --i)
+      {
+        uint32_t cur_byte = immediate_val & 255;
+        if (reg2_ptr[i] < cur_byte + temp)
+        {
+          reg1_ptr[i] = reg2_ptr[i] + 256 - temp - cur_byte;
+          temp = 1; // Increase carry
+        }
+        else
+        {
+          reg1_ptr[i] = reg2_ptr[i] - temp - cur_byte;
+          temp = 0; // Carry has been used
+        }
+        immediate_val >>= 8;
+      }
+      SCMULATE_ERROR_IF(0, temp == 1, "Registers must be possitive numbers, addition of numbers resulted in negative number. Carry was 1 at the end of the operation");
+    }
+    else
+    {
+      // REGISTER REGISTER ADD CASE
+      decoded_reg_t reg3 = inst->getOp3().value.reg;
+      unsigned char *reg2_ptr = reg2.reg_ptr;
+      unsigned char *reg3_ptr = reg3.reg_ptr;
+
+      // Where to store the result
+      unsigned char *reg1_ptr = reg1.reg_ptr;
+      int32_t size_reg_bytes = reg1.reg_size_bytes;
+
+      // Subtraction
+      uint32_t temp = 0;
+      for (int32_t i = size_reg_bytes - 1; i >= 0; --i)
+      {
+        if (reg2_ptr[i] < reg3_ptr[i] + temp)
+        {
+          reg1_ptr[i] = reg2_ptr[i] + 256 - temp - reg3_ptr[i];
+          temp = 1; // Increase carry
+        }
+        else
+        {
+          reg1_ptr[i] = reg2_ptr[i] - temp - reg3_ptr[i];
+          temp = 0; // Carry has been used
+        }
+      }
+      SCMULATE_ERROR_IF(0, temp == 1, "Registers must be possitive numbers, addition of numbers resulted in negative number. Carry was 1 at the end of the operation");
+    }
+    return nullptr;
+  }
+
+  /////////////////////////////////////////////////////
+  ///// ARITHMETIC LOGIC FOR THE SHFL INSTRUCTION
+  /////////////////////////////////////////////////////
+  if (inst->getOpcode() == SHFL_INST.opcode)
+  {
+    SCMULATE_ERROR(0, "THE SHFL OPERATION HAS NOT BEEN IMPLEMENTED. KILLING THIS")
+//#pragma omp atomic write
+    *(this->aliveSignal) = false;
+  }
+
+  /////////////////////////////////////////////////////
+  ///// ARITHMETIC LOGIC FOR THE SHFR INSTRUCTION
+  /////////////////////////////////////////////////////
+  if (inst->getOpcode() == SHFR_INST.opcode)
+  {
+    SCMULATE_ERROR(0, "THE SHFR OPERATION HAS NOT BEEN IMPLEMENTED. KILLING THIS")
+//#pragma omp atomic write
+    *(this->aliveSignal) = false;
+  }
+
+  /////////////////////////////////////////////////////
+  ///// ARITHMETIC LOGIC FOR THE MULT INSTRUCTION
+  /////////////////////////////////////////////////////
+  if (inst->getOpcode() == MULT_INST.opcode) {
+    decoded_reg_t reg1 = inst->getOp(1).value.reg;
+    decoded_reg_t reg2 = inst->getOp(2).value.reg;
+    uint64_t op2_val = 0;
+    uint64_t op3_val = 0;
+
+    // Get value for reg2
+    unsigned char *reg2_ptr = reg2.reg_ptr;
+    int32_t size_reg2_bytes = reg2.reg_size_bytes;
+    for (int32_t i = 0; i < size_reg2_bytes; ++i) {
+      op2_val <<= 8;
+      op2_val += static_cast<uint8_t>(reg2_ptr[i]);
+    }
+    // Third operand may be register or immediate. We assumme immediate are no longer than a long long
+    if (inst->getOp(3).type == scm::operand_t::IMMEDIATE_VAL) {
+      // IMMEDIATE MULT CASE
+      // TODO: Think about the signed option of these operands
+      op3_val = inst->getOp(3).value.immediate;
+    } else {
+      // REGISTER REGISTER ADD CASE
+      decoded_reg_t reg3 = inst->getOp3().value.reg;
+      unsigned char *reg3_ptr = reg3.reg_ptr;
+      int32_t size_reg3_bytes = reg3.reg_size_bytes;
+      for (int32_t i = 0; i < size_reg3_bytes; ++i) {
+        op3_val <<= 8;
+        op3_val += static_cast<uint8_t>(reg3_ptr[i]);
+      }
+    }
+
+    uint64_t mult_res = op2_val * op3_val;
+    // Where to store the result
+    unsigned char *reg1_ptr = reg1.reg_ptr;
+    int32_t size_reg1_bytes = reg1.reg_size_bytes;
+    for (int32_t i = size_reg1_bytes - 1; i >= 0; --i) {
+      reg1_ptr[i] = mult_res & 255;
+      mult_res >>= 8;
+    }
+    return nullptr;
+  }
+}
+
 void scm::fetch_decode_module::executeArithmeticInstructions(scm::decoded_instruction_t *inst)
 {
   /////////////////////////////////////////////////////
@@ -771,4 +1010,9 @@ bool scm::fetch_decode_module::gemAttemptAssignExecuteInstruction(scm::instructi
 bool scm::fetch_decode_module::gemAttemptAssignCommit()
 {
   return(owner->commitFromFD());
+}
+
+bool scm::fetch_decode_module::fetchOperandsFromMem(scm::instruction_state_pair * inst)
+{
+  return(owner->fetchOperandsFromMem(inst));
 }

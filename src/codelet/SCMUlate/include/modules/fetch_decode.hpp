@@ -98,11 +98,19 @@ namespace scm {
 
       /** \brief logic to execute an arithmetic instruction
        *
-       *  We will execute arithmetic instructions in the SU when they are simple enough. Other arithmetic
+       *  We will execute arithmetic instructions in the FetchDecode module when they are simple enough. Other arithmetic
        *  instructions must be implemented as codelets 
        */
       inline void executeArithmeticInstructions(decoded_instruction_t * inst);
 
+      /** \brief logic to execute an arithmetic instruction after using calls to the SU to fetch register copies
+       *
+       * We execute basic arithmetic instructions handling registers with size 64 bits after using calls
+       * to the owner (gem5::SU) to fetch local copies of the registers from memory. Do not need a pointer
+       * to the decoded instruction because it will reference the register copies from the SU and the
+       * stallingInst(ruction) variable in the SU since the SU can only handle 1 arithmetic instruction at a time.
+      */
+      inline unsigned char * execArithInstFromCopy();
 
       /** \brief logic to schedule an execute instruction (codelet)
        *
@@ -121,6 +129,13 @@ namespace scm {
        *  We make a call upwards to the SU indicating COMMIT instruction has been reached
        */
       inline bool gemAttemptAssignCommit();
+
+      /** \brief calls gem5::SU function to construct request packets for the data needed
+       * 
+       *  We make a call upwards to the SU to begin reading in the register contents needed
+       *  for the SCM instruction. The instruction will stall until the result is written back
+      */
+      inline bool fetchOperandsFromMem(instruction_state_pair * inst);
 
       /** \brief get the SU number
        *

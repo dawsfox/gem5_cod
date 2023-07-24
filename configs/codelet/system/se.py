@@ -186,7 +186,8 @@ class MyCodeletSystem(System):
 
     # Read in the file name of the SCM program as a string to send to the SU as a parameter
     self.su.scm_file_name = scmProgPath
-
+    #Connect SU mem port to the L3 bus
+    self.su.mem_side_port = self.l3bus.cpu_side_ports
     # Connect SU ports to the codelet bus
     self.su.cod_side_resp_port = self.codbus.mem_side_ports
     # SU connects its request port to the codelet bus' cpu-side port (because it must connect to a response port) though it is physically not cpu-side

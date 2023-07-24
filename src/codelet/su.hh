@@ -11,8 +11,7 @@
 #include "codelet/SCMUlate/include/modules/control_store.hpp"
 #include "codelet/SCMUlate/include/modules/instruction_mem.hpp"
 #include "codelet/SCMUlate/include/modules/register.hpp"
-//#include <queue>
-//#include <list>
+#include "mem/qport.hh"
 #include <set>
 
 namespace gem5
@@ -20,6 +19,17 @@ namespace gem5
 
 class SU : public ClockedObject
 {
+  public:
+    typedef enum {
+      EMPTY = 0,
+      OP1_FETCHED = 1,
+      OP2_FETCHED = 2,
+      FETCH_COMPLETE = 3,
+      WRITING = 4,
+      OP3_WRITTEN = 5,
+      TRANS_COMPLETE = 7
+    } localRegState;
+    
   private:
     class CodSideReqPort : public RequestPort
     {
@@ -110,6 +120,121 @@ class SU : public ClockedObject
         void recvRespRetry() override;
     }; // class CodSideRespPort
 
+    class SURequestPort : public QueuedRequestPort
+    {
+
+      public:
+
+        /**
+         * Schedule a send of a request packet (from the MSHR). Note
+         * that we could already have a retry outstanding.
+         */
+        void schedSendEvent(Tick time)
+        {
+            //DPRINTF(CachePort, "Scheduling send event at %llu\n", time);
+            reqQueue.schedSendEvent(time);
+        }
+
+      protected:
+
+        SURequestPort(const std::string &_name, SU *_su,
+                        ReqPacketQueue &_reqQueue,
+                        SnoopRespPacketQueue &_snoopRespQueue) :
+            QueuedRequestPort(_name, _su, _reqQueue, _snoopRespQueue)
+        { }
+
+        /**
+         * Memory-side port always snoops.
+         * (not on my watch it doesn't)
+         * @return always false
+         */
+        virtual bool isSnooping() const { return false; }
+    };
+
+    /**
+     * Override the default behaviour of sendDeferredPacket to enable
+     * the memory-side cache port to also send requests based on the
+     * current MSHR status. This queue has a pointer to our specific
+     * cache implementation and is used by the MemSidePort.
+     */
+    class SUReqPacketQueue : public ReqPacketQueue
+    {
+
+      protected:
+
+        SU &su;
+        SnoopRespPacketQueue &snoopRespQueue;
+
+      public:
+
+        SUReqPacketQueue(SU &su, RequestPort &port,
+                            SnoopRespPacketQueue &snoop_resp_queue,
+                            const std::string &label) :
+            ReqPacketQueue(su, port, label), su(su),
+            snoopRespQueue(snoop_resp_queue) { }
+
+        /**
+         * Override the normal sendDeferredPacket and do not only
+         * consider the transmit list (used for responses), but also
+         * requests.
+         */
+        //virtual void sendDeferredPacket() {};
+
+        /**
+         * Check if there is a conflicting snoop response about to be
+         * send out, and if so simply stall any requests, and schedule
+         * a send event at the same time as the next snoop response is
+         * being sent out.
+         *
+         * @param pkt The packet to check for conflicts against.
+         */
+        bool checkConflictingSnoop(const PacketPtr pkt)
+        {   /*
+            if (snoopRespQueue.checkConflict(pkt, cache.blkSize)) {
+                DPRINTF(CachePort, "Waiting for snoop response to be "
+                        "sent\n");
+                Tick when = snoopRespQueue.deferredPacketReadyTime();
+                schedSendEvent(when);
+                return true;
+            }
+            */
+            return false;
+        }
+    };
+
+
+    /**
+     * The memory-side port extends the base cache request port with
+     * access functions for functional, atomic and timing snoops.
+     */
+    class MemSidePort : public SURequestPort
+    {
+      private:
+
+        /** The cache-specific queue. */
+        SUReqPacketQueue _reqQueue;
+
+        SnoopRespPacketQueue _snoopRespQueue;
+
+        // a pointer to our specific cache implementation
+        SU *su;
+
+      protected:
+
+        virtual void recvTimingSnoopReq(PacketPtr pkt) {};
+
+        virtual bool recvTimingResp(PacketPtr pkt);
+
+        virtual Tick recvAtomicSnoop(PacketPtr pkt) {};
+
+        virtual void recvFunctionalSnoop(PacketPtr pkt) {};
+
+      public:
+
+        MemSidePort(const std::string &_name, SU *_su,
+                    const std::string &_label);
+    };
+
     /**
      * Handle the request from the CPU side. Called from the CPU port
      * on a timing request.
@@ -180,6 +305,11 @@ class SU : public ClockedObject
     // and sets regSpace
     unsigned char * readRegSpacePtr();
 
+    // handles the responses coming back from the (queued) memPort;
+    // should organize data in a way that the SU/FD is aware when
+    // all required data is available for an instruction to execute
+    void recvTimingResp(PacketPtr pkt);
+
     /* SCM modules go here; they will handle behavior based on the SCM
      * program. Fetch decode module is used to schedule instructions 
      * based on the instruction level parallelism instantiation. The
@@ -217,6 +347,8 @@ class SU : public ClockedObject
 
     // Params
     System * system;
+    // For building requests
+    RequestorID reqId;
     /// Latency representing dependency signaling overhead
     const Cycles sigLatency;
     /// Number of slots in Codelet queue
@@ -230,6 +362,8 @@ class SU : public ClockedObject
     // codRespPorts used for receiving Codelet retirements and dependency signaling from CU
     //std::vector<CodSideRespPort> codRespPorts;
     CodSideRespPort codRespPort;
+
+    MemSidePort memPort;
 
     // port flow control -- may be changed later for queued ports
     bool respBlocked;
@@ -253,6 +387,8 @@ class SU : public ClockedObject
 
     // Mapping of fire to instruction per CU for instructions that are either executing or already deployed
     // to the Codelet Interface. Vector of pointers to fire:inst_pair maps
+    // May need to be changed later; problems expected if multiple codelets with same fire function
+    // are deployed to the same CU
     std::vector<std::map<fire_t, scm::instruction_state_pair *> *> executingInsts;
 
     unsigned numCus; // number of CUs this SU is managing
@@ -266,6 +402,15 @@ class SU : public ClockedObject
 
     unsigned char * regSpace = nullptr;
 
+    // Holds local copies of registers; used to organize mem reads of scm registers
+    // organized like: dest, src1, src2
+    unsigned char * localRegCopies;
+    // Keeps track of which registers' contents have been received from memory
+
+    localRegState regCopyState; 
+    // Pointer to scm instruction state pair that the reg copies are for
+    scm::instruction_state_pair * stallingInst;
+
     /// SU statistics
   protected:
     struct SUStats : public statistics::Group
@@ -277,11 +422,29 @@ class SU : public ClockedObject
     } stats;
 
   public:
-
+    
     // function for fetch decode unit to call when it needs to push a codelet
     bool pushFromFD(scm::instruction_state_pair *inst_pair);
     // function for fetch decode unit to call when commit instruction is reached
     bool commitFromFD();
+    // function for fetch decode unit to call when reading register values to operate on them locally
+    bool fetchOperandsFromMem(scm::instruction_state_pair *inst_pair);
+    // function for fetch decode unit to call when writing back to a register from a local operation
+    // operates based on the stallingInst
+    bool writebackOpToMem(uint64_t * result);
+
+    // Accessor methods for FD unit to access the register data that was fetched and its state
+    long unsigned getLocalDest() { return(*(&localRegCopies[0])); }
+    long unsigned getLocalSrc1() { return(*(&localRegCopies[8])); }
+    long unsigned getLocalSrc2() { return(*(&localRegCopies[16])); }
+    unsigned char * getLocalDestPtr() { return(&localRegCopies[0]); }
+    unsigned char * getLocalSrc1Ptr() { return(&localRegCopies[8]); }
+    unsigned char * getLocalSrc2Ptr() { return(&localRegCopies[16]); }
+    localRegState getCopyState() { return(regCopyState); }
+    scm::instruction_state_pair * getStallingInst() { return(stallingInst); }
+    void clearStallingInst() { stallingInst = nullptr; regCopyState = EMPTY;}
+    
+
     fire_t getCodeletFire(std::string codName);
 
     // trying this; SU is not sending range change on startup....

@@ -65,7 +65,7 @@ class TestSystem(MyCodeletSystem):
 
 
 # For now, hardcode scm program path
-scm_file_name = "/home/dfox/gem5_cod/tests/test-progs/codelet/src/test_prog.scm"
+scm_file_name = "/home/dfox/gem5_cod/tests/test-progs/codelet/vec_add/src/test_prog.scm"
 system = TestSystem(scm_file_name, args.num_cores)
 system.setTestBinary(args.binary, args.num_cores)
 root = Root(full_system = False, system = system)
@@ -77,7 +77,7 @@ for i in range(args.num_cores):
             Addr(0x90000000),
             #0xf0,
             0x44 * args.num_cores + 0x80, #Extending to cover space of multiple CodeletInterfaces and the SU 
-            False)
+            False) # These addresses should NOT be cacheable
     
     system.cpu[i].workload[0].map(Addr(0x90001000),
             Addr(0x90001000),
