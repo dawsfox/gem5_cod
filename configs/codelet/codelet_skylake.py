@@ -56,6 +56,7 @@ parser.add_argument('config', choices = valid_configs.keys())
 parser.add_argument('num_cores', type = int, help = "Number of cores to instantiate")
 parser.add_argument('toggle_codelet', type = str, help = "Toggle SCM modules")
 parser.add_argument('binary', type = str, help = "Path to binary to run")
+parser.add_argument('scm_file', type = str, help = "Path to SCM file for execution")
 args = parser.parse_args()
 
 #class TestSystem(MySystem):
@@ -71,9 +72,9 @@ elif args.toggle_codelet == "DARTS":
 else:
     print("Invalid Codelet setting; Enter either SCM or DARTS")
 
-# For now, hardcode scm program path
+scm_file_name = args.scm_file
 #scm_file_name = "/home/dfox/gem5_cod/tests/test-progs/codelet/vec_add/src/test_prog.scm"
-scm_file_name = "/home/dfox/gem5_cod/tests/test-progs/codelet/chain/src/chain.scm"
+#scm_file_name = "/home/dfox/gem5_cod/tests/test-progs/codelet/chain/src/chain.scm"
 system = TestSystem(scm_file_name, args.num_cores, darts_config)
 system.setTestBinary(args.binary, args.num_cores, darts_config)
 root = Root(full_system = False, system = system)
