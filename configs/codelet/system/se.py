@@ -68,6 +68,7 @@ class MyCodeletSystem(System):
     # Set up the system port for functional access from the simulator
     self.system_port = self.membus.cpu_side_ports
 
+    """
     if not darts_config:
       # Set up Codelet bus for CodeletInterface and SU
       self.codbus = NoncoherentXBar()
@@ -75,6 +76,13 @@ class MyCodeletSystem(System):
       self.codbus.frontend_latency = 0 #placeholder
       self.codbus.response_latency = 0 #placeholder
       self.codbus.width = 64 #placeholder
+    """
+    # Set up Codelet bus for CodeletInterface and SU
+    self.codbus = NoncoherentXBar()
+    self.codbus.forward_latency = 0 #placeholder
+    self.codbus.frontend_latency = 0 #placeholder
+    self.codbus.response_latency = 0 #placeholder
+    self.codbus.width = 64 #placeholder
 
     # Create a memory bus, a coherent crossbar, in this case
     self.l3bus = L2XBar(width = 192,
@@ -87,10 +95,14 @@ class MyCodeletSystem(System):
     self.l3cache.connectMemSideBus(self.membus)
     self.l2bus = [L2XBar(width = 192) for i in range(numCores)]
     self.l2cache = [L2Cache() for i in range(numCores)]
+    """
     if not darts_config:
       self.codelet_interface = [CodeletInterface() for i in range(numCores)]
+    """
+    self.codelet_interface = [CodeletInterface() for i in range(numCores)]
 
     for i in range(numCores):
+      """
       if not darts_config: # Running Codelet system with modules for SCM
         # Create Codelet Interface for the CPU
         # Make sure each codelet interface has it's own unique range
@@ -115,6 +127,25 @@ class MyCodeletSystem(System):
         self.cpu[i].dcache = L1DCache()
         # Connect data cache (L1) normally
         self.cpu[i].dcache.connectCPU(self.cpu[i])
+      """
+
+      self.codelet_interface[i].queue_range = AddrRange(start = Addr(0x90000000) + 0x44 * i, 
+                                                          end = Addr(0x90000000)
+                                                          + 0x44 * (i+1)) #range should be size of codelet_t...
+      
+      self.codelet_interface[i].cu_id = i
+        # Make sure to initialize the version of L1DCache that connects to the CodeletInterface
+      self.cpu[i].dcache = L1DCacheCod()
+        # Connect data cache (L1) to CodeletInterface and connect CPU data port to CodeletInterface
+        # Forwarding non-codelet data requests through Codelet Interface to the L1 dcache
+      self.cpu[i].dcache_port = self.codelet_interface[i].cpu_side_ports
+      self.cpu[i].dcache.connectCPU(self.codelet_interface[i])
+        # "Codelet side port" is a port that connects through the noncoherent Codelet bus instead of membus
+        # Connecting Codelet side ports between Codelet Interface and codelet bus
+      self.codelet_interface[i].cod_side_req_port = self.codbus.cpu_side_ports # For retiring Codelets 
+        # Connect Codelet response port to codelet bus -- called mem_side b/c it's a request port, practically it's on the CPU side
+      self.codelet_interface[i].cod_side_resp_port = self.codbus.mem_side_ports # For SU pushing Codelets to CU
+
 
       # Create an L1 instruction and MMU cache
       self.cpu[i].icache = L1ICache()
