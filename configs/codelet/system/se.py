@@ -115,11 +115,11 @@ class MyCodeletSystem(System):
         self.cpu[i].dcache = L1DCacheCod()
         # Connect data cache (L1) to CodeletInterface and connect CPU data port to CodeletInterface
         # Forwarding non-codelet data requests through Codelet Interface to the L1 dcache
-        self.cpu[i].dcache_port = self.codelet_interface[i].cpu_side_ports
+        self.cpu[i].dcache_port = self.codelet_interface[i].cpu_side_port
         self.cpu[i].dcache.connectCPU(self.codelet_interface[i])
         # "Codelet side port" is a port that connects through the noncoherent Codelet bus instead of membus
         # Connecting Codelet side ports between Codelet Interface and codelet bus
-        self.codelet_interface[i].cod_side_req_port = self.codbus.cpu_side_ports # For retiring Codelets 
+        self.codelet_interface[i].cod_side_req_port = self.codbus.cpu_side_port # For retiring Codelets 
         # Connect Codelet response port to codelet bus -- called mem_side b/c it's a request port, practically it's on the CPU side
         self.codelet_interface[i].cod_side_resp_port = self.codbus.mem_side_ports # For SU pushing Codelets to CU
       else: # Running a conventional skylake configuration to execute DARTS (or whatever else)
@@ -138,7 +138,7 @@ class MyCodeletSystem(System):
       self.cpu[i].dcache = L1DCacheCod()
         # Connect data cache (L1) to CodeletInterface and connect CPU data port to CodeletInterface
         # Forwarding non-codelet data requests through Codelet Interface to the L1 dcache
-      self.cpu[i].dcache_port = self.codelet_interface[i].cpu_side_ports
+      self.cpu[i].dcache_port = self.codelet_interface[i].cpu_side_port
       self.cpu[i].dcache.connectCPU(self.codelet_interface[i])
         # "Codelet side port" is a port that connects through the noncoherent Codelet bus instead of membus
         # Connecting Codelet side ports between Codelet Interface and codelet bus

@@ -8,7 +8,8 @@ class CodeletInterface(ClockedObject):
     cxx_class = "gem5::CodeletInterface"
 
     #Needs same ports as a cache since it will pass through normal memory requests -- i port and d port and pop/read codelets?
-    cpu_side_ports = VectorResponsePort("CPU side port, services mem requests, pop Codelets (memory mapped)")
+    #cpu_side_ports = VectorResponsePort("CPU side port, services mem requests, pop Codelets (memory mapped)")
+    cpu_side_port = ResponsePort("CPU side port, services mem requests, pop Codelets (memory mapped)")
     #Mem side for forwarding normal memory requests to membus
     mem_side_port = RequestPort("Memory side port, creates requests")
     #Codelet side request ports for retiring codelets and signaling dependencies

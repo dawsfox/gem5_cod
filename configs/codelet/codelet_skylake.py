@@ -73,6 +73,8 @@ else:
     print("Invalid Codelet setting; Enter either SCM or DARTS")
 
 scm_file_name = args.scm_file
+if darts_config:
+    scm_file_name = ""
 #scm_file_name = "/home/dfox/gem5_cod/tests/test-progs/codelet/vec_add/src/test_prog.scm"
 #scm_file_name = "/home/dfox/gem5_cod/tests/test-progs/codelet/chain/src/chain.scm"
 system = TestSystem(scm_file_name, args.num_cores, darts_config)

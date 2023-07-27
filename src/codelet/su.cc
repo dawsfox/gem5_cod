@@ -866,8 +866,8 @@ SU::tick()
 
 SU::SU(const SUParams &params) :
     ClockedObject(params),
-    //ilpMode(scm::SEQUENTIAL),
-    ilpMode(scm::OOO),
+    ilpMode(scm::SEQUENTIAL),
+    //ilpMode(scm::OOO),
     scmFileName(params.scm_file_name.data()),
     tickEvent([this]{ tick(); }, "SU tick",
                 false, Event::CPU_Tick_Pri),
