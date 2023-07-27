@@ -9,12 +9,12 @@ int main(int argc, char* argv[])
         char * cu_id_str = (char *)argv[1];
         cu_id = atoi(cu_id_str);
     }
-    printf("main -- found CU id %d\n", cu_id);
+    //printf("main -- found CU id %d\n", cu_id);
     bool alive_sig = true;
     //printf("register space has address %p\n", register_space);
     volatile unsigned * codeletAvailable;
     volatile runt_codelet_t * toFire;
-    printf("CU %d: toFire @ %p; codeletAvailable @ %p\n", cu_id, ((char *)INTERFACE_ACTIVE_COD_PTR) + cu_id * 0x44U, ((char *)INTERFACE_COD_AVAIL_PTR) + cu_id * 0x44U);
+    //printf("CU %d: toFire @ %p; codeletAvailable @ %p\n", cu_id, ((char *)INTERFACE_ACTIVE_COD_PTR) + cu_id * 0x44U, ((char *)INTERFACE_COD_AVAIL_PTR) + cu_id * 0x44U);
     codeletAvailable = (volatile unsigned *) (((char *)INTERFACE_COD_AVAIL_PTR) + cu_id * 0x44U);
     toFire = (volatile runt_codelet_t *) (((char *)INTERFACE_ACTIVE_COD_PTR) + cu_id * 0x44U);
     while(alive_sig) {
@@ -36,6 +36,6 @@ int main(int argc, char* argv[])
             }
         }
     }
-    printf("CU %d: program returning\n", cu_id);
+    //printf("CU %d: program returning\n", cu_id);
     return(0);
 }
