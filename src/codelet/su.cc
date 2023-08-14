@@ -597,8 +597,10 @@ SU::fetchOperandsFromMem(scm::instruction_state_pair *inst_pair)
     PacketPtr src1_pkt = Packet::createRead(src1_req);
     src1_pkt->dataStatic<uint64_t>(new uint64_t);
     DPRINTF(SUMem, "Fetching data from addr %lx for SCM instruction\n", src1_addr);
-    memPort.sendTimingReq(src1_pkt);
+    //memPort.sendTimingReq(src1_pkt);
+    memPort.schedTimingReq(src1_pkt, curTick() + 1);
     // not sure if we will have to check if the timing request succeeds...
+    // maybe will have to keep an eye on consistency now that it is queued
     // ---------------- Packet building for src2 --------------------------------------------------------------    
     // src2 is immediate so we don't have to fetch it
     if (inst->getOp3().type != scm::operand_t::IMMEDIATE_VAL) {
@@ -608,7 +610,8 @@ SU::fetchOperandsFromMem(scm::instruction_state_pair *inst_pair)
         PacketPtr src2_pkt = Packet::createRead(src2_req);
         src2_pkt->dataStatic<uint64_t>(new uint64_t);
         DPRINTF(SUMem, "Fetching data from addr %lx for SCM instruction\n", src2_addr);
-        memPort.sendTimingReq(src2_pkt);
+        //memPort.sendTimingReq(src2_pkt);
+        memPort.schedTimingReq(src2_pkt, curTick() + 1);
     }
     return(true);
 }
@@ -629,7 +632,8 @@ SU::writebackOpToMem(uint64_t * result)
         dest_pkt->dataStatic<uint64_t>(result);
         // TODO: assess if there is an issue here with passing reference of parameter; probably this function should take a pointer
         DPRINTF(SUMem, "Writing back data %lx to addr %lx for SCM instruction\n", *result, dest_addr);
-        memPort.sendTimingReq(dest_pkt);
+        //memPort.sendTimingReq(dest_pkt);
+        memPort.schedTimingReq(dest_pkt, curTick() + 1);
         return(true);
     }
 }
@@ -832,23 +836,6 @@ SU::tick()
     // in the codelet space that should go to the queue
     /* no local codelet space setup yet so lets ignore first part */
     // then should push out codelets from the queue -- one per tick?
-    /*
-    if (!codQueue.empty() && !reqBlocked) {
-        Addr interface_addr(0x90000000);
-        codelet_t * localCod = (codelet_t *) malloc(sizeof(codelet_t));
-        *localCod = codQueue.front();
-        codQueue.pop();
-        sendRequest(localCod, interface_addr);
-    }
-    else if (!reqBlocked) { // if queue empty but requests aren't blocked
-        // later, this should be wrapped in a private function
-        // for now we are saying if no codelets left, end
-        // later it will be based on deps / program flow
-        Addr interface_addr(0x90000000);
-        sendRequest(&finalCod, interface_addr);
-        aliveSig = false;
-    }
-    */
     // only tick the FD when it hasn't reached COMMIT yet
     if (aliveSig) {
         fetchDecode->tickBehavior();
@@ -866,8 +853,8 @@ SU::tick()
 
 SU::SU(const SUParams &params) :
     ClockedObject(params),
-    ilpMode(scm::SEQUENTIAL),
-    //ilpMode(scm::OOO),
+    //ilpMode(scm::SEQUENTIAL),
+    ilpMode(scm::OOO),
     scmFileName(params.scm_file_name.data()),
     tickEvent([this]{ tick(); }, "SU tick",
                 false, Event::CPU_Tick_Pri),

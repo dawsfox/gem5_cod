@@ -598,8 +598,8 @@ unsigned char * scm::fetch_decode_module::execArithInstFromCopy()
 
       //unsigned char *reg2_ptr = reg2.reg_ptr;
       unsigned char *reg2_ptr = owner->getLocalSrc1Ptr();
-      SCMULATE_INFOMSG(3, "Src1 copy is : %lx", *((uint64_t *)reg2_ptr));
-      SCMULATE_INFOMSG(3, "Immediate value is : %lx", immediate_val);
+      SCMULATE_INFOMSG(3, "Src1 copy is : %ld", *((uint64_t *)reg2_ptr));
+      SCMULATE_INFOMSG(3, "Immediate value is : %ld", immediate_val);
 
       // Where to store the result
       //unsigned char *reg1_ptr = reg1.reg_ptr;
@@ -617,9 +617,9 @@ unsigned char * scm::fetch_decode_module::execArithInstFromCopy()
         immediate_val >>= 8;
         // Carry on
         temp = temp > 255 ? 1 : 0;
-        SCMULATE_INFOMSG(3, "Intermediate dest is : %lx", *((uint64_t *)reg1_ptr));
+        SCMULATE_INFOMSG(3, "Intermediate dest is : %ld", *((uint64_t *)reg1_ptr));
       }
-      SCMULATE_INFOMSG(3, "Dest copy is : %lx", *((uint64_t *)reg1_ptr));
+      SCMULATE_INFOMSG(3, "Dest copy is : %ld", *((uint64_t *)reg1_ptr));
       return reg1_ptr;
     }
     else
@@ -630,8 +630,8 @@ unsigned char * scm::fetch_decode_module::execArithInstFromCopy()
       unsigned char *reg2_ptr = owner->getLocalSrc1Ptr();
       //unsigned char *reg3_ptr = reg3.reg_ptr;
       unsigned char *reg3_ptr = owner->getLocalSrc2Ptr();
-      SCMULATE_INFOMSG(3, "Src1 copy is : %lx", *((uint64_t *)reg2_ptr));
-      SCMULATE_INFOMSG(3, "Src2 copy is : %lx", *((uint64_t *)reg3_ptr));
+      SCMULATE_INFOMSG(3, "Src1 copy is : %ld", *((uint64_t *)reg2_ptr));
+      SCMULATE_INFOMSG(3, "Src2 copy is : %ld", *((uint64_t *)reg3_ptr));
 
       // Where to store the result
       //unsigned char *reg1_ptr = reg1.reg_ptr;
@@ -648,7 +648,7 @@ unsigned char * scm::fetch_decode_module::execArithInstFromCopy()
         // Carry on
         temp = temp > 255 ? 1 : 0;
       }
-      SCMULATE_INFOMSG(3, "Dest copy is : %lx", *((uint64_t *)reg1_ptr));
+      SCMULATE_INFOMSG(3, "Dest copy is : %ld", *((uint64_t *)reg1_ptr));
       return reg1_ptr;
     }
   }
