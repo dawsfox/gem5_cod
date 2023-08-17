@@ -8,12 +8,12 @@
 
 // this is a statically allocated codelet graph that should be loaded into SU
 // dependencies are based on the scm program and managed by the SU
-user_codelet_t codelet_graph[CODELET_NUM] __attribute__ ((section(".codelet_program"))) = {{"HelloCod_2048L", helloCodFire},
-                                                                                           {"HelloCodTwo_2048L", helloCodFireTwo},
-                                                                                           {"HelloCodThree_2048L", helloCodFireThree},
-                                                                                           {"VecInitOne_2048L", vecInitOne},
-                                                                                           {"VecInitTwo_2048L", vecInitTwo},
-                                                                                           {"VecAdd_2048L", vecAdd}};
+user_codelet_t codelet_graph[CODELET_NUM] __attribute__ ((section(".codelet_program"))) = {{OP1_RD, "HelloCod_2048L", helloCodFire},
+                                                                                           {OP1_RD, "HelloCodTwo_2048L", helloCodFireTwo},
+                                                                                           {OP1_RD, "HelloCodThree_2048L", helloCodFireThree},
+                                                                                           {OP1_WR, "VecInitOne_2048L", vecInitOne},
+                                                                                           {OP1_WR, "VecInitTwo_2048L", vecInitTwo},
+                                                                                           {OP1_WR | OP2_RD | OP3_RD, "VecAdd_2048L", vecAdd}};
 
 
 void helloCodFire(void * dest, void * src1, void * src2) {
