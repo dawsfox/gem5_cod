@@ -319,16 +319,10 @@ class SU : public ClockedObject
      * Codelets finishing will be triggered when a codelet retirement
      * request comes from the CodeletInterface */
 
-    //scm::reg_file_module regFile; // needed to created instructionMem; will take root pointer
-    //scm::control_store_module controlStore;
-    //scm::inst_mem_module instructionMem; // needed for fetchDecode. Will take regFile and scmFileName
     scm::reg_file_module * regFile; // needed to created instructionMem; will take root pointer
     scm::control_store_module * controlStore;
     scm::inst_mem_module * instructionMem; // needed for fetchDecode. Will take regFile and scmFileName
 
-    /* Try to pass controlStore as nullptr to fetchDecode if possible, because we will replace the
-     * mechanisms for execution that it provides. Alternatively, could alter the controlStore to 
-     * provide the functionality we want. That would probably be better coding practice */
     // ilpMode can be: SEQUENTIAL, SUPERSCALAR, OOO
     scm::ILP_MODES ilpMode;
     //scm::fetch_decode_module fetchDecode;
@@ -395,10 +389,8 @@ class SU : public ClockedObject
 
     unsigned cuToSchedule = 0; // used for round robin scheduling to CUs
 
-    // Size should probably be made a SU param later
-    // honestly will probably be able to get rid of this later
-    runt_codelet_t codSpace[32];
-    std::map<std::string, fire_t> codMapping;
+    //std::map<std::string, fire_t> codMapping;
+    std::map<std::string, user_codelet_t> codMapping;
 
     unsigned char * regSpace = nullptr;
 
@@ -406,10 +398,17 @@ class SU : public ClockedObject
     // organized like: dest, src1, src2
     unsigned char * localRegCopies;
     // Keeps track of which registers' contents have been received from memory
-
     localRegState regCopyState; 
     // Pointer to scm instruction state pair that the reg copies are for
     scm::instruction_state_pair * stallingInst;
+
+    // Used for register copying (for renaming in OoO)
+    scm::decoded_reg_t * copyDest;
+    scm::decoded_reg_t * copySrc;
+    unsigned copySize;
+    unsigned copyReceived;
+    bool regMemCopy = false;
+
 
     /// SU statistics
   protected:
@@ -443,9 +442,11 @@ class SU : public ClockedObject
     localRegState getCopyState() { return(regCopyState); }
     scm::instruction_state_pair * getStallingInst() { return(stallingInst); }
     void clearStallingInst() { stallingInst = nullptr; regCopyState = EMPTY;}
+    void initRegMemCopy(scm::decoded_reg_t * dest, scm::decoded_reg_t * src);
     
 
     fire_t getCodeletFire(std::string codName);
+    uint16_t getCodeletIo(std::string codName);
 
     // trying this; SU is not sending range change on startup....
     void init() override;

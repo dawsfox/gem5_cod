@@ -156,6 +156,8 @@ namespace scm {
       */
       int tickBehavior();
 
+      gem5::SU * getOwner() { return(owner); }
+
       TIMERS_COUNTERS_GUARD(
         void setTimerCounter(timers_counters * newTC) { 
           this->time_cnt_m = newTC; 

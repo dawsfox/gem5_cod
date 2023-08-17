@@ -57,22 +57,19 @@ SU::getCodelets()
         DPRINTF(SULoader, "Codelet list located at %p with %u codelets\n", codelet_list, codelet_count);
         DPRINTF(SULoader, "size of user codelet: %u\n", sizeof(user_codelet_t));
         for (int i=0; i<codelet_count; i++) {
-            //runt_codelet_t *localCod = (runt_codelet_t *) malloc(sizeof(runt_codelet_t));
-            //memcpy(localCod, &(codelet_program[i]), sizeof(codelet_t));
-            //strcpy(localCod->name, codelet_list[i].name);
-            //localCod->fire = codelet_list[i].fire;
             DPRINTF(SULoader, "codelet %d is at address %p in elf\n", i, &(codelet_list[i]));
-            DPRINTF(SULoader, "codelet is: %p - %s\n", (void *)codelet_list[i].fire, codelet_list[i].name);
-            //DPRINTF(SULoader, "real codelet is: %p %x %x %x %x\n", (void *)localCod->fire, localCod->dest, localCod->src1, localCod->src2, localCod->id);
-            //codQueue.push(*localCod);
-            //codSpace[i] = *localCod;
-            //free(localCod);
-            char codName[32];
+            DPRINTF(SULoader, "codelet is: %x - %p - %s\n", codelet_list[i].io, (void *)codelet_list[i].fire, codelet_list[i].name);
+            char codName[30];
             strcpy(codName, codelet_list[i].name);
             std::string codStringName(codName);
             // copying name from elf and then mapping it to the fire function in the SU::codMapping
-            codMapping[codStringName] = (fire_t) codelet_list[i].fire;
-            DPRINTF(SULoader, "loaded user codelet mapping: %s - %p\n", codStringName.data(), (void *)codMapping[codStringName]);
+            //codMapping[codStringName] = (fire_t) codelet_list[i].fire;
+            user_codelet_t tmp;
+            tmp.io = codelet_list[i].io;
+            strcpy(tmp.name, codelet_list[i].name);
+            tmp.fire = codelet_list[i].fire;
+            codMapping[codStringName] = tmp;
+            DPRINTF(SULoader, "loaded user codelet mapping: %s - %p, %x\n", codStringName.data(), (void *)codMapping[codStringName].fire, codMapping[codStringName].io);
         }
         return(codelet_count);
         /*
@@ -90,15 +87,31 @@ SU::getCodelets()
 fire_t
 SU::getCodeletFire(std::string codName)
 {
-    fire_t tmp = codMapping[codName];
+    fire_t tmp = codMapping[codName].fire;
     if (!tmp) {
       for(auto it = codMapping.cbegin(); it != codMapping.cend(); ++it)
       {
-        SCMULATE_INFOMSG(3, "Codelet %s at %p", it->first.c_str(), (void *) it->second);
+        SCMULATE_INFOMSG(3, "Codelet %s at %p", it->first.c_str(), (void *) it->second.fire);
       }
         SCMULATE_ERROR(0, "Fire function requested from SU for codelet %s not found", codName.c_str());
     }
     return(tmp);
+}
+
+uint16_t
+SU::getCodeletIo(std::string codName)
+{
+    // below causes problems because I/O can be 0 and valid
+    //uint16_t tmp = codMapping[codName].io;
+    auto it = codMapping.find(codName);
+    if (it == codMapping.end()) {
+      for(auto it = codMapping.cbegin(); it != codMapping.cend(); ++it)
+      {
+        SCMULATE_INFOMSG(3, "Codelet %s with I/O %x", it->first.c_str(), it->second.io);
+      }
+        SCMULATE_ERROR(0, "I/O requested from SU for codelet %s not found", codName.c_str());
+    }
+    return(codMapping[codName].io);
 }
 
 unsigned char *
@@ -523,10 +536,12 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
             }
         } 
     }
+    /*
     if (!dest || !src1 || !src2) {
         DPRINTF(SUSCM, "operands missing for codelet %s\n", codName);
         return(false);
     }
+    */
     runt_codelet_t tmp; // = {(fire_t)scmCod->getFireFunc(), dest, src1, src2, nullptr)};
     tmp.fire = (fire_t) scmCod->getFireFunc();
     tmp.dest = dest;
@@ -636,6 +651,34 @@ SU::writebackOpToMem(uint64_t * result)
         memPort.schedTimingReq(dest_pkt, curTick() + 1);
         return(true);
     }
+}
+
+// called from fetch decode module; uses functional accesses to hide the register copy,
+// only for an early implementation
+void
+SU::initRegMemCopy(scm::decoded_reg_t * dest, scm::decoded_reg_t * src)
+{
+    copyDest = dest;
+    copySrc = src;
+    regMemCopy = true;
+    copySize = dest->reg_size_bytes;
+    DPRINTF(SUSCM, "Initiating functional register copy\n");
+    // send out all the read packets required based on the register size
+    for (int i=0; i<copySize; i+=8) {
+        uint64_t src_addr = (uint64_t) (src->reg_ptr + i);
+        Request::Flags reqFlags(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
+        const RequestPtr src_req = std::shared_ptr<Request>(new Request(Addr(src_addr), sizeof(uint64_t), reqFlags, reqId));
+        PacketPtr src_pkt = Packet::createRead(src_req);
+        memPort.sendFunctional(src_pkt);
+        // functional is instant so we should be able to immediately copy and send the dest packet
+        uint64_t * ele = src_pkt->getPtr<uint64_t>();
+        uint64_t dest_addr = (uint64_t) (dest->reg_ptr + i);
+        Request::Flags reqFlags2(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
+        const RequestPtr dest_req = std::shared_ptr<Request>(new Request(Addr(dest_addr), sizeof(uint64_t), reqFlags, reqId));
+        PacketPtr dest_pkt = Packet::createWrite(dest_req);
+        dest_pkt->dataStatic<uint64_t>(ele);
+    }
+    DPRINTF(SUSCM, "Functional register copy done\n");
 }
 
 // this is only called when the SU receives a response from the memPort

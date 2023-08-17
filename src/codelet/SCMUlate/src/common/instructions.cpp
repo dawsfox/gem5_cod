@@ -55,7 +55,9 @@ namespace scm {
 
           //cod_exec = scm::codeletFactory::createCodelet(this->getInstruction(), newArgs);
           // for now hardcode number of params as 3; also hardcoding the IO right now
-          cod_exec = new codelet(3, newArgs, scm::OP_IO::OP1_WR | scm::OP_IO::OP2_RD | scm::OP_IO::OP3_RD);
+          //cod_exec = new codelet(3, newArgs, scm::OP_IO::OP1_WR | scm::OP_IO::OP2_RD | scm::OP_IO::OP3_RD);
+          
+          cod_exec = new codelet(3, newArgs, inst_memory->getOwner()->getCodeletIo(this->getInstruction()));
           cod_exec->setMemoryRange(&this->memRanges);
           cod_exec->setFireFunc((void *)inst_memory->getOwner()->getCodeletFire(this->getInstruction()));
           if (cod_exec == nullptr) 

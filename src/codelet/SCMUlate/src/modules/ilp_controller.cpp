@@ -1,4 +1,6 @@
 #include "codelet/SCMUlate/include/modules/ilp_controller.hpp"
+#include "codelet/SCMUlate/include/modules/fetch_decode.hpp"
+#include "codelet/su.hh"
 
 namespace scm {
 
@@ -258,11 +260,13 @@ namespace scm {
                 if (available && original_renamed_reg != new_renamed_reg) {
                   SCMULATE_INFOMSG(5, "Copying register %s to register %s", original_renamed_reg.reg_name.c_str(), new_renamed_reg.reg_name.c_str());
                   //printf("Copying register %s to register %s\n", original_renamed_reg.reg_name.c_str(), new_renamed_reg.reg_name.c_str());
-                  std::memcpy(new_renamed_reg.reg_ptr, original_renamed_reg.reg_ptr, original_renamed_reg.reg_size_bytes);
+                  //std::memcpy(new_renamed_reg.reg_ptr, original_renamed_reg.reg_ptr, original_renamed_reg.reg_size_bytes);
+                  // replace with call upwards to SU to perform functional copies since registers are in emulated address space
+                  owner->getOwner()->initRegMemCopy(&new_renamed_reg, &original_renamed_reg);
                 }
 
 
-                // Fith. Apply renaming, and subscribe if not available
+                // Fifth. Apply renaming, and subscribe if not available
                 for (int other_op_num = 1; other_op_num <= MAX_NUM_OPERANDS; ++other_op_num) {
                   if (already_processed_operands.find(other_op_num) == already_processed_operands.end()) {
                     operand_t& other_op = inst->getOp(other_op_num);

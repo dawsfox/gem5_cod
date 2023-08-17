@@ -470,9 +470,12 @@ namespace scm {
    * other data structures (have already been processed). On re-entry to checkMarkInstructionsToSched, we check
    * if there is a previous hazzard, and we ignore current instruction in favor of resolving the hazzard. 
    */
+  class fetch_decode_module; // forward dec.
+
   class ilp_OoO {
     private:
       reg_file_module * hidden_register_file;
+      fetch_decode_module * owner;
 
       // We must maintain a reference to the operand and its specific operand. The operand is maintained
       // as an integer to be used with getOp(). The instruction is needed to allow changing instruction state
@@ -494,7 +497,7 @@ namespace scm {
       std::unordered_set<int> already_processed_operands;
 
     public:
-      ilp_OoO() : hidden_register_file(new reg_file_module()), hazzard_inst_state(nullptr) { }
+      ilp_OoO(fetch_decode_module * owner) : owner(owner), hidden_register_file(new reg_file_module()), hazzard_inst_state(nullptr) { }
       /** \brief check if instruction can be scheduled 
       * Returns true if the instruction could be scheduled according to
       * the current detected hazards. If it is possible to schedule it, then
@@ -542,12 +545,15 @@ namespace scm {
   };
 
   class ilp_controller {
+      scm::fetch_decode_module * owner;
       const ILP_MODES SCMULATE_ILP_MODE;
       ilp_sequential seq_ctrl;
       ilp_superscalar supscl_ctrl;
       ilp_OoO ooo_ctrl;
     public:
-      ilp_controller (const ILP_MODES ilp_mode) : SCMULATE_ILP_MODE(ilp_mode) {
+      ilp_controller (const ILP_MODES ilp_mode, scm::fetch_decode_module * owner) : SCMULATE_ILP_MODE(ilp_mode),
+        owner(owner),
+        ooo_ctrl(owner) {
         SCMULATE_INFOMSG_IF(3, SCMULATE_ILP_MODE == ILP_MODES::SEQUENTIAL, "Using %d ILP_MODES::SEQUENTIAL",SCMULATE_ILP_MODE );
         SCMULATE_INFOMSG_IF(3, SCMULATE_ILP_MODE == ILP_MODES::SUPERSCALAR, "Using %d ILP_MODES::SUPERSCALAR", SCMULATE_ILP_MODE);
         SCMULATE_INFOMSG_IF(3, SCMULATE_ILP_MODE == ILP_MODES::OOO, "Using %d ILP_MODES::OOO", SCMULATE_ILP_MODE);
