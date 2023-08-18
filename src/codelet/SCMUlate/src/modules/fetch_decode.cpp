@@ -342,8 +342,10 @@ int scm::fetch_decode_module::tickBehavior()
               break;
             case MEMORY_INST:
               SCMULATE_INFOMSG(4, "Scheduling a MEMORY_INST %s", current_pair->first->getFullInstruction().c_str());
-              if (!gemAttemptAssignExecuteInstruction(current_pair))
-                current_pair->second = instruction_state::READY;
+              //if (!gemAttemptAssignExecuteInstruction(current_pair))
+              //  current_pair->second = instruction_state::READY;
+              executeMemoryInstruction(current_pair);
+              current_pair->second = instruction_state::EXECUTION_DONE;
               break;
             default:
               SCMULATE_ERROR(0, "Instruction not recognized");
@@ -1015,4 +1017,45 @@ bool scm::fetch_decode_module::gemAttemptAssignCommit()
 bool scm::fetch_decode_module::fetchOperandsFromMem(scm::instruction_state_pair * inst)
 {
   return(owner->fetchOperandsFromMem(inst));
+}
+
+void scm::fetch_decode_module::executeMemoryInstruction(scm::instruction_state_pair * inst)
+{
+  /////////////////////////////////////////////////////
+  ///// LOGIC FOR THE LDIMM INSTRUCTION
+  ///// Operand 1 is where to load the instructions
+  ///// Operand 2 the inmediate value to be used
+  /////////////////////////////////////////////////////
+  if (inst->first->getOpcode() == LDIMM_INST.opcode) {
+    // Obtain destination register
+    decoded_reg_t reg1 = inst->first->getOp1().value.reg;
+    unsigned char * reg1_ptr = reg1.reg_ptr;
+    int32_t size_reg1_bytes = reg1.reg_size_bytes;
+
+    int32_t i, j;
+
+    // Obtain base address and perform copy
+    uint64_t immediate_value = inst->first->getOp2().value.immediate;
+    uint64_t * dest = new uint64_t;
+    *dest = immediate_value;
+    this->owner->writeOp(&reg1, (void *) dest);
+    
+    // Perform actual memory assignment
+    /*
+    for (i = size_reg1_bytes-1, j = 0; i >= 0; --i, ++j) {
+      if (j < 8) {
+        unsigned char temp = immediate_value & 255;
+        reg1_ptr[i] = temp;
+        immediate_value >>= 8;
+      } else {
+        // Zero out the rest of the register
+        reg1_ptr[i] = 0;
+      }
+    }
+    */
+    return;
+  } else {
+    SCMULATE_ERROR(0, "Trying to execute unimplemented memory instruction");
+  }
+
 }

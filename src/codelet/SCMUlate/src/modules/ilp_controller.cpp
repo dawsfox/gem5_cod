@@ -428,7 +428,11 @@ namespace scm {
                     } else {
                       // Broadcasting
                       // TODO: REMINDER: This may result in multiple copies of the same value. We must change it accordingly
-                      std::memcpy(other_inst_state_pair->first->getOp(it_broadcast->second).value.reg.reg_ptr, it->first.reg_ptr, it->first.reg_size_bytes);
+                      //std::memcpy(other_inst_state_pair->first->getOp(it_broadcast->second).value.reg.reg_ptr, it->first.reg_ptr, it->first.reg_size_bytes);
+                      decoded_reg_t tmp = it->first;
+                      owner->getOwner()->initRegMemCopy(&(other_inst_state_pair->first->getOp(it_broadcast->second).value.reg),
+                                                        //&(it->first));
+                                                        &tmp);
                       // Marking as ready
                     }
                     other_inst_state_pair->first->getOp(it_broadcast->second).full_empty = true;

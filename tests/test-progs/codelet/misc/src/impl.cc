@@ -10,7 +10,8 @@
 // dependencies are based on the scm program and managed by the SU
 user_codelet_t codelet_graph[CODELET_NUM] __attribute__ ((section(".codelet_program"))) = {{OP1_RD, "HelloCod_2048L", helloCodFire},
                                                                                            {OP1_RD, "HelloCodTwo_2048L", helloCodFireTwo},
-                                                                                           {OP1_RD, "HelloCodThree_2048L", helloCodFireThree},
+                                                                                           // below has RD/WR to test register copying
+                                                                                           {OP1_RD | OP1_WR, "HelloCodThree_2048L", helloCodFireThree},
                                                                                            {OP1_WR, "VecInitOne_2048L", vecInitOne},
                                                                                            {OP1_WR, "VecInitTwo_2048L", vecInitTwo},
                                                                                            {OP1_WR | OP2_RD | OP3_RD, "VecAdd_2048L", vecAdd}};
@@ -18,14 +19,17 @@ user_codelet_t codelet_graph[CODELET_NUM] __attribute__ ((section(".codelet_prog
 
 void helloCodFire(void * dest, void * src1, void * src2) {
     printf("hi from inside codelet fire function\n");
+    printf("helloCod has R1: %lx\n", *((unsigned long *)dest));
 }
 
 void helloCodFireTwo(void * dest, void * src1, void * src2) {
     printf("hi v2\n");
+    printf("helloCod2 has R1: %lx\n", *((unsigned long *)dest));
 }
 
 void helloCodFireThree(void * dest, void * src1, void * src2) {
     printf("it's hi v3 here\n");
+    printf("helloCod3 has R1: %lx\n", *((unsigned long *)dest));
 }
 
 void vecInitOne(void * dest, void * src1, void * src2) {

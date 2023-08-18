@@ -447,6 +447,8 @@ class SU : public ClockedObject
 
     fire_t getCodeletFire(std::string codName);
     uint16_t getCodeletIo(std::string codName);
+    void * fetchOp(scm::decoded_reg_t * reg);
+    void writeOp(scm::decoded_reg_t * reg, void * src);
 
     // trying this; SU is not sending range change on startup....
     void init() override;

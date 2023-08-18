@@ -669,6 +669,8 @@ SU::initRegMemCopy(scm::decoded_reg_t * dest, scm::decoded_reg_t * src)
         Request::Flags reqFlags(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
         const RequestPtr src_req = std::shared_ptr<Request>(new Request(Addr(src_addr), sizeof(uint64_t), reqFlags, reqId));
         PacketPtr src_pkt = Packet::createRead(src_req);
+        src_pkt->dataStatic<uint64_t>(new uint64_t);
+        DPRINTF(SUSCM, "Sending out functional read packet %s\n", src_pkt->print());
         memPort.sendFunctional(src_pkt);
         // functional is instant so we should be able to immediately copy and send the dest packet
         uint64_t * ele = src_pkt->getPtr<uint64_t>();
@@ -677,8 +679,48 @@ SU::initRegMemCopy(scm::decoded_reg_t * dest, scm::decoded_reg_t * src)
         const RequestPtr dest_req = std::shared_ptr<Request>(new Request(Addr(dest_addr), sizeof(uint64_t), reqFlags, reqId));
         PacketPtr dest_pkt = Packet::createWrite(dest_req);
         dest_pkt->dataStatic<uint64_t>(ele);
+        DPRINTF(SUSCM, "Sending out functional write packet %s\n", dest_pkt->print());
+        memPort.sendFunctional(dest_pkt);
+        free(ele);
     }
     DPRINTF(SUSCM, "Functional register copy done\n");
+}
+
+ //code calling this function should be sure to free the pointer returned after use
+void *
+SU::fetchOp(scm::decoded_reg_t * reg)
+{
+    unsigned reg_size = reg->reg_size_bytes;
+    void * dest = malloc(reg_size);
+    for (int i=0; i<reg_size; i+=8) {
+        uint64_t src_addr = (uint64_t) (reg->reg_ptr + i);
+        Request::Flags reqFlags(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
+        const RequestPtr src_req = std::shared_ptr<Request>(new Request(Addr(src_addr), sizeof(uint64_t), reqFlags, reqId));
+        PacketPtr src_pkt = Packet::createRead(src_req);
+        src_pkt->dataStatic<uint64_t>(new uint64_t);
+        DPRINTF(SUSCM, "Sending functional read %s for reg. %s\n", src_pkt->print(), reg->reg_name);
+        memPort.sendFunctional(src_pkt);
+        memcpy(dest+i, src_pkt->getPtr<void>(), 8);
+        free(src_pkt->getPtr<void>()); // free the pkt data we had to allocate
+    }
+    return(dest);
+}
+
+void
+SU::writeOp(scm::decoded_reg_t * reg, void * src)
+{
+    unsigned reg_size = reg->reg_size_bytes;
+    for (int i=0; i<reg_size; i+=8) {
+        uint64_t dest_addr = (uint64_t) (reg->reg_ptr + i);
+        Request::Flags reqFlags(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
+        const RequestPtr dest_req = std::shared_ptr<Request>(new Request(Addr(dest_addr), sizeof(uint64_t), reqFlags, reqId));
+        PacketPtr dest_pkt = Packet::createWrite(dest_req);
+        dest_pkt->dataStatic<uint64_t>(new uint64_t);
+        DPRINTF(SUSCM, "Sending functional write %s for reg. %s\n", dest_pkt->print(), reg->reg_name);
+        memcpy(dest_pkt->getPtr<void>(), src+i, 8);
+        memPort.sendFunctional(dest_pkt);
+        free(dest_pkt->getPtr<void>());
+    }
 }
 
 // this is only called when the SU receives a response from the memPort

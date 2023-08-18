@@ -137,6 +137,8 @@ namespace scm {
       */
       inline bool fetchOperandsFromMem(instruction_state_pair * inst);
 
+      inline void executeMemoryInstruction(instruction_state_pair * inst);
+
       /** \brief get the SU number
        *
        *  We select a CU and we assign a new codelet to it. When it is done, we delete the codelet
