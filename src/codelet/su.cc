@@ -485,6 +485,14 @@ SU::sendRequest(runt_codelet_t *toPush, Addr dest)
     if (reqBlocked) { //can't send if already being used
         return false;
     }
+        Request::Flags reqFlags2(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
+        const RequestPtr src_req = std::shared_ptr<Request>(new Request(Addr(0x90bb9010), sizeof(uint64_t), reqFlags2, reqId));
+        PacketPtr src_pkt = Packet::createRead(src_req);
+        src_pkt->dataStatic<uint64_t>(new uint64_t);
+        DPRINTF(SUSCM, "Sending out functional read packet %s\n", src_pkt->print());
+        memPort.sendFunctional(src_pkt);
+        DPRINTF(SUSCM, "Read packet returned value 0x%lx\n", *src_pkt->getPtr<uint64_t>());
+        delete src_pkt->getPtr<uint64_t>();
     DPRINTF(SU, "Pushing codelet to interface with addr %#x\n", dest);
     reqBlocked = true;
     // addr should be one that is contained within the CodeletInterface
@@ -522,17 +530,14 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
         scm::operand_t & op = inst->getOp(op_num);
         if (scm::instructions::isRegister(opStr)) {
             // REGISTER REGISTER ADD CASE
-            op.value.reg.reg_ptr = regFile->getRegisterByName(op.value.reg.reg_size, op.value.reg.reg_number);
+            //op.value.reg.reg_ptr = regFile->getRegisterByName(op.value.reg.reg_size, op.value.reg.reg_number);
             if (op_num == 1) {
                 dest = (void *) op.value.reg.reg_ptr;
                 // for some reason, gem5 crashes trying to print the reg_ptr as %p but not dest......
-                //DPRINTF(SUSCM, "dest set to %p based on %lx\n", dest, (long unsigned)op.value.reg.reg_ptr);
             } else if (op_num == 2) {
                 src1 = (void *) op.value.reg.reg_ptr;
-                //DPRINTF(SUSCM, "src1 set to %p based on %lx\n", src1, (long unsigned)op.value.reg.reg_ptr);
             } else if (op_num == 3) {
                 src2 = (void *) op.value.reg.reg_ptr;
-                //DPRINTF(SUSCM, "src2 set to %p based on %lx\n", src2, (long unsigned)op.value.reg.reg_ptr);
             }
         } 
     }
@@ -542,7 +547,7 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
         return(false);
     }
     */
-    runt_codelet_t tmp; // = {(fire_t)scmCod->getFireFunc(), dest, src1, src2, nullptr)};
+    runt_codelet_t tmp;
     tmp.fire = (fire_t) scmCod->getFireFunc();
     tmp.dest = dest;
     tmp.src1 = src1;
@@ -551,12 +556,13 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
     // TODO: add a way to make sure this gets freed at some point
     runt_codelet_t * toPush = (runt_codelet_t *) malloc(sizeof(runt_codelet_t));
     memcpy(toPush, &tmp, sizeof(runt_codelet_t));
-    DPRINTF(SUSCM, "Runtime codelet built: %p\t%p\t%p\t%p\t%s\n", (void *)tmp.fire, tmp.dest, tmp.src1, tmp.src2, tmp.name);
-    DPRINTF(SUSCM, "toPush for comparison: %p\t%p\t%p\t%p\t%s\n", (void *)toPush->fire, toPush->dest, toPush->src1, toPush->src2, toPush->name);
+    //uint64_t dest_val = *((uint64_t *)tmp.dest);
+    //DPRINTF(SUSCM, "dest has value 0x%lx\n", dest_val);
     // send to CodeletInterface
     // at some point, we should avoid doing this work every single time unless SU isn't blocked
     Addr interface_addr(0x90000000 + (cuToSchedule * 0x44));
     if(sendRequest(toPush, interface_addr)) {
+        DPRINTF(SUSCM, "Runtime codelet sent: %p\t%p\t%p\t%p\t%s\n", (void *)tmp.fire, tmp.dest, tmp.src1, tmp.src2, tmp.name);
         // add instruction that was sent to the list of instructions in execution
         //executingInsts.push(inst_pair); // for queue verions of executingInsts
         //executingInsts[tmp.fire].push_back(inst_pair);
@@ -662,7 +668,7 @@ SU::initRegMemCopy(scm::decoded_reg_t * dest, scm::decoded_reg_t * src)
     copySrc = src;
     regMemCopy = true;
     copySize = dest->reg_size_bytes;
-    DPRINTF(SUSCM, "Initiating functional register copy\n");
+    DPRINTF(SUSCM, "Initiating functional register copy (from %s to %s with size %d bytes)\n", src->reg_name, dest->reg_name, copySize);
     // send out all the read packets required based on the register size
     for (int i=0; i<copySize; i+=8) {
         uint64_t src_addr = (uint64_t) (src->reg_ptr + i);
@@ -674,14 +680,29 @@ SU::initRegMemCopy(scm::decoded_reg_t * dest, scm::decoded_reg_t * src)
         memPort.sendFunctional(src_pkt);
         // functional is instant so we should be able to immediately copy and send the dest packet
         uint64_t * ele = src_pkt->getPtr<uint64_t>();
+        DPRINTF(SUSCM, "Data read functionally is 0x%lx; data is located at %p in gem5 space\n", *ele, ele);
         uint64_t dest_addr = (uint64_t) (dest->reg_ptr + i);
         Request::Flags reqFlags2(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
-        const RequestPtr dest_req = std::shared_ptr<Request>(new Request(Addr(dest_addr), sizeof(uint64_t), reqFlags, reqId));
+        const RequestPtr dest_req = std::shared_ptr<Request>(new Request(Addr(dest_addr), sizeof(uint64_t), reqFlags2, reqId));
         PacketPtr dest_pkt = Packet::createWrite(dest_req);
-        dest_pkt->dataStatic<uint64_t>(ele);
-        DPRINTF(SUSCM, "Sending out functional write packet %s\n", dest_pkt->print());
+        //dest_pkt->dataStatic<uint64_t>(ele);
+        dest_pkt->dataStatic<uint64_t>(new uint64_t);
+        memcpy(dest_pkt->getPtr<uint64_t>(), ele, sizeof(uint64_t));
+        delete src_pkt->getPtr<uint64_t>();
+        DPRINTF(SUSCM, "Sending out functional write packet %s with data 0x%lx\n", dest_pkt->print(), *dest_pkt->getPtr<uint64_t>());
         memPort.sendFunctional(dest_pkt);
-        free(ele);
+        delete dest_pkt->getPtr<uint64_t>();
+        /* functional read properly returns; so the problem is not here
+        uint64_t src2_addr = (uint64_t) (src->reg_ptr + i);
+        Request::Flags reqFlags3(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
+        const RequestPtr src2_req = std::shared_ptr<Request>(new Request(Addr(src_addr), sizeof(uint64_t), reqFlags3, reqId));
+        PacketPtr src2_pkt = Packet::createRead(src2_req);
+        src2_pkt->dataStatic<uint64_t>(new uint64_t);
+        DPRINTF(SUSCM, "Sending out functional read packet %s\n", src2_pkt->print());
+        memPort.sendFunctional(src2_pkt);
+        DPRINTF(SUSCM, "Read packet returned value 0x%lx\n", *src2_pkt->getPtr<uint64_t>());
+        delete src2_pkt->getPtr<uint64_t>();
+         */
     }
     DPRINTF(SUSCM, "Functional register copy done\n");
 }
@@ -897,7 +918,7 @@ SU::init()
     //regFile = new scm::reg_file_module((scm::register_file_t *)regSpace);
     regFile = new scm::reg_file_module((scm::register_file_t *)0x90001000);
     instructionMem = new scm::inst_mem_module(scmFileName, regFile, this);
-    fetchDecode = new scm::fetch_decode_module(instructionMem, controlStore, &aliveSig, ilpMode, this);
+    fetchDecode = new scm::fetch_decode_module(instructionMem, controlStore, &aliveSig, ilpMode, this, (uint64_t)(0x90001000+12288000));
     /* TODO: change SU fields that are scm modules to be pointers to the SCM modules
      * We have to do this because the register file needs to be instantiated when the
      * SU already has gotten the root point of the register file from the ELF file. This
@@ -909,6 +930,18 @@ void
 SU::startup()
 {
     // here: schedule first tick
+    // adding some page table checking to debug hidden register file
+    /* doesn't seem to be a mapping problem... don't see anything else mapped in the region
+    ThreadContext *tmp_context = system->threads[0];
+    gem5::Process * tmp_proc = tmp_context->getProcessPtr();
+    auto proc_map = new std::vector<std::pair<Addr, Addr>>;
+    tmp_proc->pTable->getMappings(proc_map); 
+    DPRINTF(SUSCM, "Printing process memory mappings\n");
+    for (auto it=proc_map->cbegin(); it!=proc_map->cend(); it++) {
+        DPRINTF(SUSCM, "0x%lx : 0x%lx\n", it->first, it->second);
+    }
+    delete proc_map;
+    */
     DPRINTF(SU, "scheduling first tick\n");
     schedule(tickEvent, clockEdge(Cycles(1)));
 }
@@ -939,7 +972,8 @@ SU::tick()
 SU::SU(const SUParams &params) :
     ClockedObject(params),
     //ilpMode(scm::SEQUENTIAL),
-    ilpMode(scm::OOO),
+    //ilpMode(scm::OOO),
+    ilpMode(scm::OOO), // OOO ILP now takes root for hidden register file
     scmFileName(params.scm_file_name.data()),
     tickEvent([this]{ tick(); }, "SU tick",
                 false, Event::CPU_Tick_Pri),

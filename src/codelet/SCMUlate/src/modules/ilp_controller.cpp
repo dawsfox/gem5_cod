@@ -355,7 +355,7 @@ namespace scm {
           return otherReg;
         }
         newReg.reg_name = std::string("R_ren_") + newReg.reg_size + std::string("_") + std::to_string(newReg.reg_number);
-        SCMULATE_INFOMSG(4, "Register %s mapped to %s with renaming", otherReg.reg_name.c_str(), newReg.reg_name.c_str());
+        SCMULATE_INFOMSG(4, "Register %s mapped to %s (at %p) with renaming", otherReg.reg_name.c_str(), newReg.reg_name.c_str(), newReg.reg_ptr);
         return newReg;
       }
 
@@ -430,6 +430,7 @@ namespace scm {
                       // TODO: REMINDER: This may result in multiple copies of the same value. We must change it accordingly
                       //std::memcpy(other_inst_state_pair->first->getOp(it_broadcast->second).value.reg.reg_ptr, it->first.reg_ptr, it->first.reg_size_bytes);
                       decoded_reg_t tmp = it->first;
+                      SCMULATE_INFOMSG(3, "FD module calling upwards to SU to copy register contents to %p", other_inst_state_pair->first->getOp(it_broadcast->second).value.reg.reg_ptr);
                       owner->getOwner()->initRegMemCopy(&(other_inst_state_pair->first->getOp(it_broadcast->second).value.reg),
                                                         //&(it->first));
                                                         &tmp);

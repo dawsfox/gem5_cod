@@ -88,7 +88,7 @@ namespace scm {
       fetch_decode_module() = delete;
       //fetch_decode_module(inst_mem_module * const inst_mem, control_store_module * const, bool * const aliveSig, ILP_MODES ilp_mode);
       // added pointer to SU that owns the fetch decode so it can make calls upwards when it's time to schedule codelets
-      fetch_decode_module(inst_mem_module * const inst_mem, control_store_module * const, bool * const aliveSig, ILP_MODES ilp_mode, gem5::SU * owner);
+      fetch_decode_module(inst_mem_module * const inst_mem, control_store_module * const, bool * const aliveSig, ILP_MODES ilp_mode, gem5::SU * owner, uint64_t root);
 
       /** \brief logic to execute an instruction
        * 

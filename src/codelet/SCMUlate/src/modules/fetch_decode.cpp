@@ -7,13 +7,14 @@ scm::fetch_decode_module::fetch_decode_module(inst_mem_module *const inst_mem,
                                               control_store_module *const control_store_m, 
                                               bool *const aliveSig, 
                                               ILP_MODES ilp_mode,
-                                              gem5::SU * owner) : 
+                                              gem5::SU * owner,
+                                              uint64_t root) : 
                                               inst_mem_m(inst_mem),
                                               ctrl_st_m(control_store_m),
                                               aliveSignal(aliveSig),
                                               PC(0),
                                               su_number(0), 
-                                              instructionLevelParallelism(ilp_mode, this), 
+                                              instructionLevelParallelism(ilp_mode, this, root), 
                                               owner(owner),
                                               stallingInstruction(nullptr)
                                               //debugger(DEBUGER_MODE)
