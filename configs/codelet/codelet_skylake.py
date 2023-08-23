@@ -75,8 +75,6 @@ else:
 scm_file_name = args.scm_file
 if darts_config:
     scm_file_name = ""
-#scm_file_name = "/home/dfox/gem5_cod/tests/test-progs/codelet/vec_add/src/test_prog.scm"
-#scm_file_name = "/home/dfox/gem5_cod/tests/test-progs/codelet/chain/src/chain.scm"
 system = TestSystem(scm_file_name, args.num_cores, darts_config)
 system.setTestBinary(args.binary, args.num_cores, darts_config)
 root = Root(full_system = False, system = system)
@@ -92,8 +90,9 @@ if not darts_config:
     
         system.cpu[i].workload[0].map(Addr(0x90001000),
                                       Addr(0x90001000),
-                                      12288000); # Attempting to map a fixed register space 
-                                      # Size comes from the SCM register config
+                                      #12288000)
+                                      12288000 * 2); # Attempting to map a fixed register space 
+                                      # Size comes from the SCM register config (register file + hidden register file)
 
 print("Beginning simulation!")
 exit_event = m5.simulate()
