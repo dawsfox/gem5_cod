@@ -19,17 +19,17 @@ user_codelet_t codelet_graph[CODELET_NUM] __attribute__ ((section(".codelet_prog
 
 void helloCodFire(void * dest, void * src1, void * src2) {
     printf("hi from inside codelet fire function\n");
-    printf("helloCod has R1: %lx\n", *((unsigned long *)dest));
+    printf("helloCod has R1 value: 0x%lx\n", *((unsigned long *)dest));
 }
 
 void helloCodFireTwo(void * dest, void * src1, void * src2) {
     printf("hi v2\n");
-    printf("helloCod2 has R1: %lx\n", *((unsigned long *)dest));
+    printf("helloCod2 has R1 value: 0x%lx\n", *((unsigned long *)dest));
 }
 
 void helloCodFireThree(void * dest, void * src1, void * src2) {
     printf("it's hi v3 here\n");
-    printf("helloCod3 has R1: %lx\n", *((unsigned long *)dest));
+    printf("helloCod3 has R1 %p with value 0x%lx\n", dest, *((unsigned long *)dest));
 }
 
 void vecInitOne(void * dest, void * src1, void * src2) {

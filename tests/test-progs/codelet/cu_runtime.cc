@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/mman.h>
 #include "codelet.hh"
 
 int main(int argc, char* argv[])
@@ -8,6 +9,8 @@ int main(int argc, char* argv[])
     if(argc > 1) {
         char * cu_id_str = (char *)argv[1];
         cu_id = atoi(cu_id_str);
+        //long unsigned mmap_ret = (long unsigned) mmap((void*)0x90001000, 12288000*2, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+        //printf("CU %d has mmap return value %lx\n", cu_id, mmap_ret);
     }
     //printf("main -- found CU id %d\n", cu_id);
     bool alive_sig = true;

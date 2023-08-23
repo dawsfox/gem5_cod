@@ -54,7 +54,8 @@ class MyCodeletSystem(System):
       self.mem_ranges = [AddrRange('100MB'), # For kernel
                         AddrRange(0xC0000000, size=0x100000), # For I/0
                         AddrRange(Addr('4GB'), size = mem_size), # All data
-                        AddrRange(0x90001000, size=12288000)
+                        #AddrRange(0x90001000, size=12288000)
+                        AddrRange(0x90001000, size=(12288000+12288000)) #account for hidden register file
                         ]
 
     #self.cpu = self._CPUModel()
