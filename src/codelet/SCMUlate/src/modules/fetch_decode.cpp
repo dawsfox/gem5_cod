@@ -424,6 +424,8 @@ void scm::fetch_decode_module::executeControlInstruction(scm::decoded_instructio
   if (inst->getOpcode() == BREQ_INST.opcode) {
     decoded_reg_t reg1 = inst->getOp1().value.reg;
     decoded_reg_t reg2 = inst->getOp2().value.reg;
+    //unsigned char *reg1_ptr = reg1.reg_ptr;
+    //unsigned char *reg2_ptr = reg2.reg_ptr;
     unsigned char *reg1_ptr = reg1.reg_ptr;
     unsigned char *reg2_ptr = reg2.reg_ptr;
     SCMULATE_INFOMSG(4, "Comparing register %s %d to %s %d", reg1.reg_size.c_str(), reg1.reg_number, reg2.reg_size.c_str(), reg2.reg_number);
@@ -807,13 +809,16 @@ void scm::fetch_decode_module::executeArithmeticInstructions(scm::decoded_instru
       // TODO: Think about the signed option of these operands
       uint64_t immediate_val = inst->getOp3().value.immediate;
 
-      unsigned char *reg2_ptr = reg2.reg_ptr;
+      //unsigned char *reg2_ptr = reg2.reg_ptr;
+      //unsigned char *reg2_ptr = (unsigned char *) owner->fetchOp(&reg2);
+      uint64_t * reg2_ptr = (uint64_t *) owner->fetchOp(&reg2);
 
       // Where to store the result
-      unsigned char *reg1_ptr = reg1.reg_ptr;
+      //unsigned char *reg1_ptr = reg1.reg_ptr;
       int32_t size_reg_bytes = reg1.reg_size_bytes;
 
       // Addition
+      /*
       uint32_t temp = 0;
       for (int32_t i = size_reg_bytes - 1; i >= 0; --i)
       {
@@ -823,19 +828,25 @@ void scm::fetch_decode_module::executeArithmeticInstructions(scm::decoded_instru
         // Carry on
         temp = temp > 255 ? 1 : 0;
       }
+      */ 
+      uint64_t temp = *reg2_ptr + immediate_val;
+      owner->writeOp(&reg1, (void *)&temp);
     }
     else
     {
       // REGISTER REGISTER ADD CASE
       decoded_reg_t reg3 = inst->getOp3().value.reg;
-      unsigned char *reg2_ptr = reg2.reg_ptr;
-      unsigned char *reg3_ptr = reg3.reg_ptr;
+      //unsigned char *reg2_ptr = reg2.reg_ptr;
+      //unsigned char *reg3_ptr = reg3.reg_ptr;
+      uint64_t * reg2_ptr = (uint64_t *) owner->fetchOp(&reg2);
+      uint64_t * reg3_ptr = (uint64_t *) owner->fetchOp(&reg3);
 
       // Where to store the result
-      unsigned char *reg1_ptr = reg1.reg_ptr;
+      //unsigned char *reg1_ptr = reg1.reg_ptr;
       int32_t size_reg_bytes = reg1.reg_size_bytes;
 
       // Addition
+      /*
       int temp = 0;
       for (int32_t i = size_reg_bytes - 1; i >= 0; --i)
       {
@@ -844,6 +855,9 @@ void scm::fetch_decode_module::executeArithmeticInstructions(scm::decoded_instru
         // Carry on
         temp = temp > 255 ? 1 : 0;
       }
+      */ 
+      uint64_t temp = *reg2_ptr + *reg3_ptr;
+      owner->writeOp(&reg1, (void *)&temp);
     }
     return;
   }
@@ -863,13 +877,15 @@ void scm::fetch_decode_module::executeArithmeticInstructions(scm::decoded_instru
       // TODO: Think about the signed option of these operands
       uint16_t immediate_val = inst->getOp3().value.immediate;
 
-      unsigned char *reg2_ptr = reg2.reg_ptr;
+      //unsigned char *reg2_ptr = reg2.reg_ptr;
+      uint64_t * reg2_ptr = (uint64_t *) owner->fetchOp(&reg2);
 
       // Where to store the result
       unsigned char *reg1_ptr = reg1.reg_ptr;
       int32_t size_reg_bytes = reg1.reg_size_bytes;
 
       // Subtraction
+      /*
       uint32_t temp = 0;
       for (int32_t i = size_reg_bytes - 1; i >= 0; --i)
       {
@@ -886,20 +902,26 @@ void scm::fetch_decode_module::executeArithmeticInstructions(scm::decoded_instru
         }
         immediate_val >>= 8;
       }
+      */ 
+      uint64_t temp = *reg2_ptr - immediate_val;
+      owner->writeOp(&reg1, (void *)&reg1);
       SCMULATE_ERROR_IF(0, temp == 1, "Registers must be possitive numbers, addition of numbers resulted in negative number. Carry was 1 at the end of the operation");
     }
     else
     {
       // REGISTER REGISTER ADD CASE
       decoded_reg_t reg3 = inst->getOp3().value.reg;
-      unsigned char *reg2_ptr = reg2.reg_ptr;
-      unsigned char *reg3_ptr = reg3.reg_ptr;
+      //unsigned char *reg2_ptr = reg2.reg_ptr;
+      //unsigned char *reg3_ptr = reg3.reg_ptr;
+      uint64_t * reg2_ptr = (uint64_t *) owner->fetchOp(&reg2);
+      uint64_t * reg3_ptr = (uint64_t *) owner->fetchOp(&reg3);
 
       // Where to store the result
-      unsigned char *reg1_ptr = reg1.reg_ptr;
+      //unsigned char *reg1_ptr = reg1.reg_ptr;
       int32_t size_reg_bytes = reg1.reg_size_bytes;
 
       // Subtraction
+      /*
       uint32_t temp = 0;
       for (int32_t i = size_reg_bytes - 1; i >= 0; --i)
       {
@@ -914,6 +936,8 @@ void scm::fetch_decode_module::executeArithmeticInstructions(scm::decoded_instru
           temp = 0; // Carry has been used
         }
       }
+      */ 
+      uint64_t temp = *reg2_ptr - *reg3_ptr;
       SCMULATE_ERROR_IF(0, temp == 1, "Registers must be possitive numbers, addition of numbers resulted in negative number. Carry was 1 at the end of the operation");
     }
     return;
@@ -949,12 +973,16 @@ void scm::fetch_decode_module::executeArithmeticInstructions(scm::decoded_instru
     uint64_t op3_val = 0;
 
     // Get value for reg2
+    /*
     unsigned char *reg2_ptr = reg2.reg_ptr;
     int32_t size_reg2_bytes = reg2.reg_size_bytes;
     for (int32_t i = 0; i < size_reg2_bytes; ++i) {
       op2_val <<= 8;
       op2_val += static_cast<uint8_t>(reg2_ptr[i]);
     }
+    */
+    uint64_t * reg2_ptr = (uint64_t *) owner->fetchOp(&reg2);
+    op2_val = *reg2_ptr;
     // Third operand may be register or immediate. We assumme immediate are no longer than a long long
     if (inst->getOp(3).type == scm::operand_t::IMMEDIATE_VAL) {
       // IMMEDIATE MULT CASE
@@ -963,22 +991,30 @@ void scm::fetch_decode_module::executeArithmeticInstructions(scm::decoded_instru
     } else {
       // REGISTER REGISTER ADD CASE
       decoded_reg_t reg3 = inst->getOp3().value.reg;
+      /*
       unsigned char *reg3_ptr = reg3.reg_ptr;
       int32_t size_reg3_bytes = reg3.reg_size_bytes;
       for (int32_t i = 0; i < size_reg3_bytes; ++i) {
         op3_val <<= 8;
         op3_val += static_cast<uint8_t>(reg3_ptr[i]);
       }
+      */
+      uint64_t * reg3_ptr = (uint64_t *) owner->fetchOp(&reg3);
+      op3_val = *reg3_ptr;
     }
 
     uint64_t mult_res = op2_val * op3_val;
     // Where to store the result
+    /*
     unsigned char *reg1_ptr = reg1.reg_ptr;
     int32_t size_reg1_bytes = reg1.reg_size_bytes;
     for (int32_t i = size_reg1_bytes - 1; i >= 0; --i) {
       reg1_ptr[i] = mult_res & 255;
       mult_res >>= 8;
     }
+    */ 
+    // with multiplication like this we have to beware over overflows
+    uint64_t temp = op2_val * op3_val;
     return;
   }
 }
@@ -1055,7 +1091,46 @@ void scm::fetch_decode_module::executeMemoryInstruction(scm::instruction_state_p
     }
     */
     return;
-  } else {
+  } 
+  /////////////////////////////////////////////////////
+  ///// LOGIC FOR THE LDADDR INSTRUCTION
+  ///// Operand 1 is where to load the instructions
+  ///// Operand 2 is the memory address either a register or immediate value. Only consider 64 bits
+  /////////////////////////////////////////////////////
+  /*
+  if (inst->first->getOpcode() == LDADR_INST.opcode) {
+    // Obtain destination register
+    decoded_reg_t reg1 = inst->first->getOp1().value.reg;
+    unsigned char * reg1_ptr = reg1.reg_ptr;
+    int32_t size_reg1_bytes = reg1.reg_size_bytes;
+
+    int32_t i, j;
+
+    // Obtain base address and perform copy
+    unsigned long base_addr = 0;
+    if (inst->first->getOp2().type == operand_t::IMMEDIATE_VAL) {
+      // Load address immediate value
+      base_addr = myInstructionSlot->getOp2().value.immediate;
+    } else if (myInstructionSlot->getOp2().type == operand_t::REGISTER) {
+      // Load address register value
+      decoded_reg_t reg2 = myInstructionSlot->getOp2().value.reg;
+      unsigned char * reg2_ptr = reg2.reg_ptr;
+      int32_t size_reg2_bytes = reg2.reg_size_bytes;
+      for (i = size_reg2_bytes-1, j = 0; j < 8 || i >= 0; --i, ++j ) {
+        unsigned long temp = reg2_ptr[i];
+        temp <<= j*8;
+        base_addr += temp;
+      } 
+    } 
+    else {
+      SCMULATE_ERROR(0, "Incorrect operand type");
+    }
+    // Perform actual memory copy
+    std::memcpy(reg1_ptr, this->getAddress(base_addr), size_reg1_bytes);
+    return;
+  }
+  */
+  else {
     SCMULATE_ERROR(0, "Trying to execute unimplemented memory instruction");
   }
 
