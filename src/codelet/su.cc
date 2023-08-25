@@ -485,6 +485,7 @@ SU::sendRequest(runt_codelet_t *toPush, Addr dest)
     if (reqBlocked) { //can't send if already being used
         return false;
     }
+    /*
         Request::Flags reqFlags2(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
         const RequestPtr src_req = std::shared_ptr<Request>(new Request(Addr(0x90bb9010), sizeof(uint64_t), reqFlags2, reqId));
         PacketPtr src_pkt = Packet::createRead(src_req);
@@ -493,6 +494,7 @@ SU::sendRequest(runt_codelet_t *toPush, Addr dest)
         memPort.sendFunctional(src_pkt);
         DPRINTF(SUSCM, "Read packet returned value 0x%lx\n", *src_pkt->getPtr<uint64_t>());
         delete src_pkt->getPtr<uint64_t>();
+    */
     DPRINTF(SU, "Pushing codelet to interface with addr %#x\n", dest);
     reqBlocked = true;
     // addr should be one that is contained within the CodeletInterface
@@ -712,7 +714,8 @@ void *
 SU::fetchOp(scm::decoded_reg_t * reg)
 {
     unsigned reg_size = reg->reg_size_bytes;
-    void * dest = malloc(reg_size);
+    //void * dest = malloc(reg_size);
+    void * dest = (void *) new unsigned char[reg_size];
     for (int i=0; i<reg_size; i+=8) {
         uint64_t src_addr = (uint64_t) (reg->reg_ptr + i);
         Request::Flags reqFlags(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
@@ -721,8 +724,9 @@ SU::fetchOp(scm::decoded_reg_t * reg)
         src_pkt->dataStatic<uint64_t>(new uint64_t);
         DPRINTF(SUSCM, "Sending functional read %s for reg. %s\n", src_pkt->print(), reg->reg_name);
         memPort.sendFunctional(src_pkt);
+        DPRINTF(SUSCM, "Functional read has unsigned data 0x%lx\n", *src_pkt->getPtr<uint64_t>());
         memcpy(dest+i, src_pkt->getPtr<void>(), 8);
-        free(src_pkt->getPtr<void>()); // free the pkt data we had to allocate
+        delete src_pkt->getPtr<void>(); // free the pkt data we had to allocate
     }
     return(dest);
 }
@@ -739,8 +743,9 @@ SU::writeOp(scm::decoded_reg_t * reg, void * src)
         dest_pkt->dataStatic<uint64_t>(new uint64_t);
         DPRINTF(SUSCM, "Sending functional write %s for reg. %s\n", dest_pkt->print(), reg->reg_name);
         memcpy(dest_pkt->getPtr<void>(), src+i, 8);
+        DPRINTF(SUSCM, "Functional write has unsigned data 0x%lx\n", *((uint64_t *)src));
         memPort.sendFunctional(dest_pkt);
-        free(dest_pkt->getPtr<void>());
+        delete dest_pkt->getPtr<void>();
     }
 }
 
