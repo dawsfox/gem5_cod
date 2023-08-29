@@ -269,7 +269,14 @@ int scm::fetch_decode_module::tickBehavior()
         case instruction_state::STALL:
           stall++;
           //ITT_TASK_BEGIN(fetch_decode_module_behavior, checkMarkInstructionToSched);
-          instructionLevelParallelism.checkMarkInstructionToSched(current_pair);
+          if (strcmp(current_pair->first->getInstruction().c_str(), "InitCod") != 0) {
+            //current_pair->second = instruction_state::STALL;
+            instructionLevelParallelism.checkMarkInstructionToSched(current_pair);
+          } else if (!initScheduled) {
+
+                initScheduled = gemAttemptAssignExecuteInstruction(current_pair);
+          }
+          //instructionLevelParallelism.checkMarkInstructionToSched(current_pair);
          
           // if this is a stalled arithmetic instruction and SU isn't currently fetching, trigger the fetch
           /*
@@ -340,8 +347,14 @@ int scm::fetch_decode_module::tickBehavior()
               break;
             case EXECUTE_INST:
               SCMULATE_INFOMSG(4, "Scheduling an EXECUTE_INST %s", current_pair->first->getFullInstruction().c_str());
-              if (!gemAttemptAssignExecuteInstruction(current_pair))
+              SCMULATE_INFOMSG(4, "EXECUTE_INST has getInstruction: %s", current_pair->first->getInstruction().c_str());
+              if (strcmp(current_pair->first->getInstruction().c_str(), "InitCod_64B")==0) {
+                current_pair->second = instruction_state::STALL;
+                stallingInstruction = current_pair;
+                initScheduled = gemAttemptAssignExecuteInstruction(current_pair);
+              } else if (!gemAttemptAssignExecuteInstruction(current_pair)) {
                 current_pair->second = instruction_state::READY;
+              }
               break;
             case MEMORY_INST:
               SCMULATE_INFOMSG(4, "Scheduling a MEMORY_INST %s", current_pair->first->getFullInstruction().c_str());

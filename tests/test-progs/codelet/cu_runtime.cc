@@ -9,6 +9,12 @@ int main(int argc, char* argv[])
     if(argc > 1) {
         char * cu_id_str = (char *)argv[1];
         cu_id = atoi(cu_id_str);
+        /*
+        if (cu_id == 0) {
+            // call init function only once, on one CU
+            scm_init();
+        }
+        */
         //long unsigned mmap_ret = (long unsigned) mmap((void*)0x90001000, 12288000*2, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
         //printf("CU %d has mmap return value %lx\n", cu_id, mmap_ret);
     }

@@ -56,7 +56,10 @@ SU::getCodelets()
         size_t codelet_count = prog_data->d_size / sizeof(user_codelet_t);
         DPRINTF(SULoader, "Codelet list located at %p with %u codelets\n", codelet_list, codelet_count);
         DPRINTF(SULoader, "size of user codelet: %u\n", sizeof(user_codelet_t));
-        for (int i=0; i<codelet_count; i++) {
+        // -2 because the last two codelets are unique;
+        // the first one is a special init codelet with a unique name that always stalls completely to perform initializations
+        // the second one is a dummy codelet that holds the base pointer of SCM memory 
+        for (int i=0; i<codelet_count-2; i++) {
             DPRINTF(SULoader, "codelet %d is at address %p in elf\n", i, &(codelet_list[i]));
             DPRINTF(SULoader, "codelet is: %x - %p - %s\n", codelet_list[i].io, (void *)codelet_list[i].fire, codelet_list[i].name);
             char codName[30];
@@ -71,6 +74,18 @@ SU::getCodelets()
             codMapping[codStringName] = tmp;
             DPRINTF(SULoader, "loaded user codelet mapping: %s - %p, %x\n", codStringName.data(), (void *)codMapping[codStringName].fire, codMapping[codStringName].io);
         }
+            char codName[30];
+            strcpy(codName, codelet_list[codelet_count-2].name);
+            std::string codStringName(codName);
+            // Loading special initCod
+            user_codelet_t tmp;
+            tmp.io = codelet_list[codelet_count-2].io;
+            strcpy(tmp.name, codelet_list[codelet_count-2].name);
+            tmp.fire = codelet_list[codelet_count-2].fire;
+            codMapping[codStringName] = tmp;
+            DPRINTF(SULoader, "loaded user codelet mapping: %s - %p, %x\n", codStringName.data(), (void *)codMapping[codStringName].fire, codMapping[codStringName].io);
+            scmBasePtr = (uint64_t) codelet_list[codelet_count-1].fire;
+            DPRINTF(SULoader, "Loaded SCM base pointer: 0x%lx\n", scmBasePtr);
         return(codelet_count);
         /*
         //for test printing
@@ -714,8 +729,8 @@ void *
 SU::fetchOp(scm::decoded_reg_t * reg)
 {
     unsigned reg_size = reg->reg_size_bytes;
-    //void * dest = malloc(reg_size);
-    void * dest = (void *) new unsigned char[reg_size];
+    //void * dest = (void *) new unsigned char[reg_size];
+    unsigned char * dest = new unsigned char[reg_size];
     for (int i=0; i<reg_size; i+=8) {
         uint64_t src_addr = (uint64_t) (reg->reg_ptr + i);
         Request::Flags reqFlags(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
@@ -725,10 +740,10 @@ SU::fetchOp(scm::decoded_reg_t * reg)
         DPRINTF(SUSCM, "Sending functional read %s for reg. %s\n", src_pkt->print(), reg->reg_name);
         memPort.sendFunctional(src_pkt);
         DPRINTF(SUSCM, "Functional read has unsigned data 0x%lx\n", *src_pkt->getPtr<uint64_t>());
-        memcpy(dest+i, src_pkt->getPtr<void>(), 8);
-        delete src_pkt->getPtr<void>(); // free the pkt data we had to allocate
+        memcpy(dest+i, src_pkt->getPtr<uint64_t>(), 8);
+        delete src_pkt->getPtr<uint64_t>(); // free the pkt data we had to allocate
     }
-    return(dest);
+    return((void *)dest);
 }
 
 void
@@ -742,10 +757,10 @@ SU::writeOp(scm::decoded_reg_t * reg, void * src)
         PacketPtr dest_pkt = Packet::createWrite(dest_req);
         dest_pkt->dataStatic<uint64_t>(new uint64_t);
         DPRINTF(SUSCM, "Sending functional write %s for reg. %s\n", dest_pkt->print(), reg->reg_name);
-        memcpy(dest_pkt->getPtr<void>(), src+i, 8);
+        memcpy(dest_pkt->getPtr<uint64_t>(), src+i, 8);
         DPRINTF(SUSCM, "Functional write has unsigned data 0x%lx\n", *((uint64_t *)src));
         memPort.sendFunctional(dest_pkt);
-        delete dest_pkt->getPtr<void>();
+        delete dest_pkt->getPtr<uint64_t>();
     }
 }
 

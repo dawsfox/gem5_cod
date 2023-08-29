@@ -370,9 +370,8 @@ class SU : public ClockedObject
     /// The port to send the response when we recieve it back
     int waitingPortId;
 
-    /// For tracking the miss latency
-    Tick missTime;
-
+    // Passed from user code, indicates the beginning of SCM memory space
+    uint64_t scmBasePtr;
     // Set of instructions that are executing on CUs
     // Used on retirement to find the instruction to change state of 
     // Queue is fine for scm::SEQUENTIAL but won't work for superscalar or ooo
@@ -444,6 +443,7 @@ class SU : public ClockedObject
     void clearStallingInst() { stallingInst = nullptr; regCopyState = EMPTY;}
     void initRegMemCopy(scm::decoded_reg_t * dest, scm::decoded_reg_t * src);
     
+    uint64_t getScmBasePtr() { return(scmBasePtr); }
 
     fire_t getCodeletFire(std::string codName);
     uint16_t getCodeletIo(std::string codName);

@@ -78,6 +78,7 @@ namespace scm {
       instructions_buffer_module inst_buff_m;
       instruction_state_pair * stallingInstruction;
       //const bool debugger;
+      bool initScheduled = false;
 
       TIMERS_COUNTERS_GUARD(
         std::string su_timer_name;

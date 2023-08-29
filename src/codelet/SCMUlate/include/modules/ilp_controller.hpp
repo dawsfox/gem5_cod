@@ -474,8 +474,8 @@ namespace scm {
 
   class ilp_OoO {
     private:
-      reg_file_module * hidden_register_file;
       fetch_decode_module * owner;
+      reg_file_module * hidden_register_file;
 
       // We must maintain a reference to the operand and its specific operand. The operand is maintained
       // as an integer to be used with getOp(). The instruction is needed to allow changing instruction state
@@ -550,8 +550,8 @@ namespace scm {
   };
 
   class ilp_controller {
-      scm::fetch_decode_module * owner;
       const ILP_MODES SCMULATE_ILP_MODE;
+      scm::fetch_decode_module * owner;
       ilp_sequential seq_ctrl;
       ilp_superscalar supscl_ctrl;
       ilp_OoO ooo_ctrl;
