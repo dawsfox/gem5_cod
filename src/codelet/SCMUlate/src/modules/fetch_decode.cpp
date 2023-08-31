@@ -347,7 +347,7 @@ int scm::fetch_decode_module::tickBehavior()
               break;
             case EXECUTE_INST:
               SCMULATE_INFOMSG(4, "Scheduling an EXECUTE_INST %s", current_pair->first->getFullInstruction().c_str());
-              SCMULATE_INFOMSG(4, "EXECUTE_INST has getInstruction: %s", current_pair->first->getInstruction().c_str());
+              //SCMULATE_INFOMSG(4, "EXECUTE_INST has getInstruction: %s", current_pair->first->getInstruction().c_str());
               if (strcmp(current_pair->first->getInstruction().c_str(), "InitCod_64B")==0) {
                 current_pair->second = instruction_state::STALL;
                 stallingInstruction = current_pair;
@@ -364,6 +364,7 @@ int scm::fetch_decode_module::tickBehavior()
               current_pair->second = instruction_state::EXECUTION_DONE;
               break;
             default:
+              SCMULATE_INFOMSG(3, "Incorrect instruction: %s", current_pair->first->getFullInstruction().c_str())
               SCMULATE_ERROR(0, "Instruction not recognized");
               *(this->aliveSignal) = false;
               break;
