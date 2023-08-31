@@ -556,7 +556,13 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
             } else if (op_num == 3) {
                 src2 = (void *) op.value.reg.reg_ptr;
             }
-        } 
+        } else if (op.type == scm::operand_t::IMMEDIATE_VAL) {
+            if (op_num == 2) {
+                src1 = (void *) op.IMMEDIATE_VAL;
+            } else if (op_num == 3) {
+                src2 = (void *) op.IMMEDIATE_VAL;
+            }
+        }
     }
     /*
     if (!dest || !src1 || !src2) {
