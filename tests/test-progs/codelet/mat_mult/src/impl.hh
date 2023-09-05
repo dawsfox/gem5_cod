@@ -13,7 +13,7 @@ void storeSqTile(void * dest, void * src1, void * src2);
 
 void scm_init();
 //#define TILE_DIM 128
-#define TILE_DIM 8
-#define SCM_MEM_SIZE 128*128*sizeof(double)*3 // Size enough for 3 square tiles of width 128 doubles
+#define TILE_DIM 16 
+#define SCM_MEM_SIZE TILE_DIM*TILE_DIM*sizeof(double)*3 // Size enough for 3 square tiles of width 128 doubles
 
 #endif

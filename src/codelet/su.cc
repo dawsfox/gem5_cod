@@ -558,9 +558,11 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
             }
         } else if (op.type == scm::operand_t::IMMEDIATE_VAL) {
             if (op_num == 2) {
-                src1 = (void *) op.IMMEDIATE_VAL;
+                DPRINTF(SUSCM, "Op 2 is immediate with value 0x%lx\n", op.value.immediate);
+                src1 = (void *) op.value.immediate;
             } else if (op_num == 3) {
-                src2 = (void *) op.IMMEDIATE_VAL;
+                DPRINTF(SUSCM, "Op 3 is immediate with value 0x%lx\n", op.value.immediate);
+                src2 = (void *) op.value.immediate;
             }
         }
     }
@@ -763,11 +765,20 @@ SU::writeOp(scm::decoded_reg_t * reg, void * src)
         PacketPtr dest_pkt = Packet::createWrite(dest_req);
         dest_pkt->dataStatic<uint64_t>(new uint64_t);
         DPRINTF(SUSCM, "Sending functional write %s for reg. %s\n", dest_pkt->print(), reg->reg_name);
-        memcpy(dest_pkt->getPtr<uint64_t>(), src+i, 8);
-        DPRINTF(SUSCM, "Functional write has unsigned data 0x%lx\n", *((uint64_t *)src));
+        memcpy(dest_pkt->getPtr<uint64_t>(), src+i, sizeof(uint64_t));
+        DPRINTF(SUSCM, "Functional write has unsigned data 0x%lx\n", *(dest_pkt->getPtr<uint64_t>()));
         memPort.sendFunctional(dest_pkt);
         delete dest_pkt->getPtr<uint64_t>();
     }
+        uint64_t dest_addr = (uint64_t) (reg->reg_ptr);
+        Request::Flags reqFlags(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
+        const RequestPtr dest_req = std::shared_ptr<Request>(new Request(Addr(dest_addr), sizeof(uint64_t), reqFlags, reqId));
+        PacketPtr dest_pkt = Packet::createRead(dest_req);
+        dest_pkt->dataStatic<uint64_t>(new uint64_t);
+        DPRINTF(SUSCM, "Sending read check %s for reg. %s\n", dest_pkt->print(), reg->reg_name);
+        memPort.sendFunctional(dest_pkt);
+        DPRINTF(SUSCM, "read check has unsigned data 0x%lx\n", *(dest_pkt->getPtr<uint64_t>()));
+        delete dest_pkt->getPtr<uint64_t>();
 }
 
 // this is only called when the SU receives a response from the memPort

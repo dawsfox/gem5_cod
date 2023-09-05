@@ -6,6 +6,9 @@
 #define INTERFACE_ACTIVE_COD_PTR 0x90000000
 #define INTERFACE_COD_AVAIL_PTR INTERFACE_ACTIVE_COD_PTR + sizeof(runt_codelet_t)
 
+#define SCM_MEMORY_BASE_PTR ((unsigned char *) 0x91771000)
+#define SCM_MEMORY(offset) ((SCM_MEMORY_BASE_PTR) + (offset))
+
 // typedef for fire function (function pointer)
 typedef void (*fire_t)(void * dest, void * src1, void * src2);
 
