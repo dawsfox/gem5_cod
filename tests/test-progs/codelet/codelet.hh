@@ -9,6 +9,9 @@
 #define SCM_MEMORY_BASE_PTR ((unsigned char *) 0x91771000)
 #define SCM_MEMORY(offset) ((SCM_MEMORY_BASE_PTR) + (offset))
 
+#define CODELET_AVAILABLE(cu_id)  ((volatile unsigned *) (((char *)INTERFACE_COD_AVAIL_PTR) + (cu_id) * (sizeof(runt_codelet_t) + sizeof(unsigned))))
+#define TO_FIRE(cu_id) ((volatile runt_codelet_t *) (((char *)INTERFACE_ACTIVE_COD_PTR) + (cu_id) * (sizeof(runt_codelet_t) + sizeof(unsigned))))
+
 // typedef for fire function (function pointer)
 typedef void (*fire_t)(void * dest, void * src1, void * src2);
 
@@ -51,6 +54,7 @@ typedef struct runt_codelet_s {
     void * src2 = nullptr;
     void * dest = nullptr;
     char name[32];
+    uint64_t unid;
 } runt_codelet_t;
 // the above struct should replace codelet_t in the CU runtime
 // also, this WHOLE codelet will have to be copied (the current gem5 side only sends a fire_t back)

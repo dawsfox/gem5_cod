@@ -48,6 +48,7 @@ typedef struct runt_codelet_s {
     void * src2 = nullptr;
     void * dest = nullptr;
     char name[32];
+    uint64_t unid; //unique id
 } runt_codelet_t;
 
 

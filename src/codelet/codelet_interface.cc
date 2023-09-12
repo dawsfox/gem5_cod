@@ -114,7 +114,6 @@ CodeletInterface::accessFunctional(PacketPtr pkt, int port_id)
     if (pkt->isRead()) {
         Addr reqAddr = pkt->getAddr(); // the address trying to be read
         auto data = pkt->getPtr<uint8_t>(); // pointer to data field of the packet
-        //if (reqAddr >= Addr(0x90000000) + sizeof(runt_codelet_t)) { // if requested address is not in the activeCodelet space
         if (reqAddr >= queueRange.start() + sizeof(runt_codelet_t)) { // if requested address is not in the activeCodelet space
             // CPU must be trying to read codeletAvailable flag
             pkt->makeResponse();
@@ -175,16 +174,16 @@ CodeletInterface::accessFunctional(PacketPtr pkt, int port_id)
         // copy active codelet to send to SU so it can retire the associated instruction
         //runt_codelet_t * toRetire = new runt_codelet_t;
         retire_data_t * toRetire = new retire_data_t;
-        memcpy(toRetire, &activeCodelet, sizeof(runt_codelet_t));
+        memcpy(&(toRetire->toRet), &activeCodelet, sizeof(runt_codelet_t));
         toRetire->cuId = cuId; 
         // perform local codelet retirement; stage new codelet or set codeletAvailable to 0
         if (codQueue.empty()) { //if the queue is empty, no more codelets currently available
-            DPRINTF(CodeletInterfaceQueue, "CPU retiring Codelet; no more Codelets available\n");
+            DPRINTF(CodeletInterfaceQueue, "CPU retiring Codelet %s with cuId %d; no more Codelets available\n", activeCodelet.name, toRetire->cuId);
             codeletAvailable = 0;
         } else { // if not, simply stage the next codelet from the queue
             runt_codelet_t toPush = codQueue.front();
             activeCodelet = toPush;
-            DPRINTF(CodeletInterfaceQueue, "CPU retiring Codelet; setting new activeCodelet\n");
+            DPRINTF(CodeletInterfaceQueue, "CPU retiring Codelet %s with cuId %d; setting new activeCodelet %s\n", toRetire->toRet.name, toRetire->cuId, toPush.name);
             codQueue.pop();
         }
         // send to SU first -- build new packet / request of size runt_codelet_t for SU
@@ -851,6 +850,7 @@ CodeletInterface::getLocAddrRanges() const
 {
     // returns AddrRange representing local codelet queue
     AddrRangeList ranges;
+    DPRINTF(CodeletInterfaceQueue, "CodeletInterface has range 0x%lx - 0x%lx\n", queueRange.start(), queueRange.end());
     ranges.push_back(queueRange);
     return(ranges);
 }

@@ -382,13 +382,13 @@ class SU : public ClockedObject
     // to the Codelet Interface. Vector of pointers to fire:inst_pair maps
     // May need to be changed later; problems expected if multiple codelets with same fire function
     // are deployed to the same CU
-    std::vector<std::map<fire_t, scm::instruction_state_pair *> *> executingInsts;
+    //std::vector<std::map<fire_t, scm::instruction_state_pair *> *> executingInsts;
+    std::vector<std::map<uint64_t, scm::instruction_state_pair *> *> executingInsts;
 
     unsigned numCus; // number of CUs this SU is managing
 
     unsigned cuToSchedule = 0; // used for round robin scheduling to CUs
 
-    //std::map<std::string, fire_t> codMapping;
     std::map<std::string, user_codelet_t> codMapping;
 
     unsigned char * regSpace = nullptr;
@@ -407,6 +407,8 @@ class SU : public ClockedObject
     unsigned copySize;
     unsigned copyReceived;
     bool regMemCopy = false;
+
+    uint64_t codUniqueId = 0;
 
 
     /// SU statistics

@@ -271,8 +271,10 @@ SU::accessFunctional(PacketPtr pkt)
     retire_data_t * retireData = pkt->getPtr<retire_data_t>();
     // modify state of the correct instruction
     auto cu_map_ptr = executingInsts[retireData->cuId];
-    panic_if(cu_map_ptr->empty(), "Attempting to retire codelet but CU %d list is empty", retireData->cuId);
-    scm::instruction_state_pair * inst_pair = (*cu_map_ptr)[retireData->toRet.fire];
+    DPRINTF(SU, "Retiring Codelet %s with unique id 0x%lx\n", retireData->toRet.name, retireData->toRet.unid);
+    panic_if(cu_map_ptr->empty(), "Attempting to retire codelet %s but CU %d list is empty", retireData->toRet.name, retireData->cuId);
+    //scm::instruction_state_pair * inst_pair = (*cu_map_ptr)[retireData->toRet.fire];
+    scm::instruction_state_pair * inst_pair = (*cu_map_ptr)[retireData->toRet.unid];
     panic_if(!inst_pair, "Instruction pair fetched from executingInsts is nullptr");
     inst_pair->second = scm::EXECUTION_DONE;
     scm::decoded_instruction_t * inst = inst_pair->first;
@@ -316,7 +318,7 @@ SU::accessFunctional(PacketPtr pkt)
     runt_codelet_t retiredCod = retireData->toRet;
     DPRINTF(SU, "SU received retirement for codelet with %s %p %p %p\n", retiredCod.name, retiredCod.dest, retiredCod.src1, retiredCod.src2);
     DPRINTF(SU, "decoded instruction for retirement: %s\n", codName.data()); //%p %p %p\n", codName.data(), dest, src1, src2);
-    cu_map_ptr->erase(retireData->toRet.fire); //remove from executing insts list
+    cu_map_ptr->erase(retireData->toRet.unid); //remove from executing insts list
     // assuming this is correct and this codelet matches with this instruction for now....
     // mark instruction as finished executing -- codelet is now properly retired
     //inst_pair->second = scm::instruction_state::EXECUTION_DONE;
@@ -510,7 +512,11 @@ SU::sendRequest(runt_codelet_t *toPush, Addr dest)
         DPRINTF(SUSCM, "Read packet returned value 0x%lx\n", *src_pkt->getPtr<uint64_t>());
         delete src_pkt->getPtr<uint64_t>();
     */
-    DPRINTF(SU, "Pushing codelet to interface with addr %#x\n", dest);
+    // request is not blocked, so now lets give the codelet a unique id and increment it
+    toPush->unid = codUniqueId;
+    codUniqueId++; // increment unique codelet id for next send
+
+    DPRINTF(SU, "Pushing codelet %s with unique id 0x%lx to interface with addr %#x\n", toPush->name, toPush->unid, dest);
     reqBlocked = true;
     // addr should be one that is contained within the CodeletInterface
     // between 0x90000000 and 0x9000000f. Should be a write, also...
@@ -578,6 +584,8 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
     tmp.src1 = src1;
     tmp.src2 = src2;
     strcpy(tmp.name, codName.data());
+    // we do not set the codelet unique id yet because we don't want to cycle through them
+    // before we actually schedule them, so we will do it in sendRequest
     // TODO: add a way to make sure this gets freed at some point
     runt_codelet_t * toPush = (runt_codelet_t *) malloc(sizeof(runt_codelet_t));
     memcpy(toPush, &tmp, sizeof(runt_codelet_t));
@@ -585,15 +593,15 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
     //DPRINTF(SUSCM, "dest has value 0x%lx\n", dest_val);
     // send to CodeletInterface
     // at some point, we should avoid doing this work every single time unless SU isn't blocked
-    Addr interface_addr(0x90000000 + (cuToSchedule * 0x44));
+    //Addr interface_addr(0x90000000 + (cuToSchedule * 0x4c));
+    Addr interface_addr(0x90000000 + (cuToSchedule * (sizeof(runt_codelet_t)+sizeof(unsigned))));
     if(sendRequest(toPush, interface_addr)) {
         DPRINTF(SUSCM, "Runtime codelet sent: %p\t%p\t%p\t%p\t%s\n", (void *)tmp.fire, tmp.dest, tmp.src1, tmp.src2, tmp.name);
         // add instruction that was sent to the list of instructions in execution
-        //executingInsts.push(inst_pair); // for queue verions of executingInsts
-        //executingInsts[tmp.fire].push_back(inst_pair);
         auto cu_map_ptr = executingInsts[cuToSchedule];
-        (*cu_map_ptr)[tmp.fire] = inst_pair;
-        DPRINTF(SULoader, "Adding inst_pair %p mapped to %lx for CU %d\n", (*cu_map_ptr)[tmp.fire], (unsigned long)tmp.fire, cuToSchedule);
+        //(*cu_map_ptr)[tmp.fire] = inst_pair;
+        (*cu_map_ptr)[toPush->unid] = inst_pair;
+        DPRINTF(SULoader, "Adding inst_pair %p mapped to %lx for CU %d\n", (*cu_map_ptr)[tmp.unid], (unsigned long)tmp.unid, cuToSchedule);
         cuToSchedule = (cuToSchedule + 1) % numCus; // enforces round robin
         return(true);
     } else {
@@ -613,7 +621,7 @@ SU::commitFromFD()
     // send to CodeletInterface
     // need to manage this better, with the SU having a count of CUs 
     // and managing different instruction lists for them
-    Addr interface_addr(0x90000000 + (numCus-1) * 0x44);
+    Addr interface_addr(0x90000000 + (numCus-1) * (sizeof(runt_codelet_t)+sizeof(unsigned)));
     if(sendRequest(toPush, interface_addr)) {
         if (numCus > 1) {
             // numCus acts here like a number of active CUs
@@ -944,6 +952,7 @@ SU::SUStats::SUStats(statistics::Group *parent)
 void
 SU::init()
 {
+    DPRINTF(SU, "Size of runtime codelet in gem5: 0x%lx\n", sizeof(runt_codelet_t));
     sendRangeChange();    
     // set reg space to correct address in runtime address spaced based on ELF section
     //regSpace = readRegSpacePtr();
@@ -1008,9 +1017,9 @@ SU::tick()
 
 SU::SU(const SUParams &params) :
     ClockedObject(params),
-    //ilpMode(scm::SEQUENTIAL),
+    ilpMode(scm::SUPERSCALAR),
     //ilpMode(scm::OOO),
-    ilpMode(scm::OOO), // OOO ILP now takes root for hidden register file
+    //ilpMode(scm::OOO), // OOO ILP now takes root for hidden register file
     scmFileName(params.scm_file_name.data()),
     tickEvent([this]{ tick(); }, "SU tick",
                 false, Event::CPU_Tick_Pri),
@@ -1032,9 +1041,8 @@ SU::SU(const SUParams &params) :
 {
     for (int i=0; i<numCus; i++) {
         // prepare correct number of fire : inst state pair maps
-        //auto cu_inst_list = new std::map<fire_t, scm::instruction_state_pair *>;
-        //executingInsts.push_back(cu_inst_list);
-        executingInsts.push_back(new std::map<fire_t, scm::instruction_state_pair *>);
+        //executingInsts.push_back(new std::map<fire_t, scm::instruction_state_pair *>);
+        executingInsts.push_back(new std::map<uint64_t, scm::instruction_state_pair *>);
     }
     finalCod.fire = (fire_t)0xffffffffffffffff;
     finalCod.dest = nullptr;

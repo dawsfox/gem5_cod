@@ -15,21 +15,21 @@ int main(int argc, char* argv[])
     volatile unsigned * codeletAvailable;
     volatile runt_codelet_t * toFire;
     //printf("CU %d: toFire @ %p; codeletAvailable @ %p\n", cu_id, ((char *)INTERFACE_ACTIVE_COD_PTR) + cu_id * 0x44U, ((char *)INTERFACE_COD_AVAIL_PTR) + cu_id * 0x44U);
-    codeletAvailable = (volatile unsigned *) (((char *)INTERFACE_COD_AVAIL_PTR) + cu_id * 0x44U);
-    toFire = (volatile runt_codelet_t *) (((char *)INTERFACE_ACTIVE_COD_PTR) + cu_id * 0x44U);
+    //codeletAvailable = (volatile unsigned *) (((char *)INTERFACE_COD_AVAIL_PTR) + cu_id * 0x4cU);
+    //toFire = (volatile runt_codelet_t *) (((char *)INTERFACE_ACTIVE_COD_PTR) + cu_id * 0x4cU);
+    codeletAvailable = CODELET_AVAILABLE(cu_id);
+    toFire = TO_FIRE(cu_id);
     while(alive_sig) {
-        // increment the CodeletInterface-based addresses by 0x40 based on CU id
-        //codeletAvailable = (volatile unsigned *) (((char *)INTERFACE_COD_AVAIL_PTR) + cu_id * 0x44U);
-        //toFire = (volatile runt_codelet_t *) (((char *)INTERFACE_ACTIVE_COD_PTR) + cu_id * 0x44U);
         if (*codeletAvailable) {
             //printf("CU %d: codelet available = %x\n", cu_id, *codeletAvailable);
-            //printf("CU %d: fire = %p\n", cu_id, (void *)toFire->fire);
+            printf("CU %d: fire = %p\n", cu_id, (void *)toFire->fire);
+            fflush(NULL);
             //printf("CU %d: codelet name: %s\n", cu_id, toFire->name);
             if (toFire->fire != nullptr && toFire->fire != (fire_t)0xffffffffffffffff) {
                 toFire->fire(toFire->dest, toFire->src1, toFire->src2);
                 // this should perform a write operation to the activeCodelet in the CodeletInterface
                 // which should be accepted as CodeletRetirement
-                toFire->fire = nullptr;
+                *((volatile unsigned *)&(toFire->fire)) = 0;
             } else if (toFire->fire == (fire_t)0xffffffffffffffff) {
                 alive_sig = false;
                 //printf("CU %d: final codelet received\n", cu_id);

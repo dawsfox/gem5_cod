@@ -55,7 +55,7 @@ class MyCodeletSystem(System):
                         AddrRange(0xC0000000, size=0x100000), # For I/0
                         AddrRange(Addr('4GB'), size=mem_size), # All data
                         #AddrRange(0x90001000, size=12288000)
-                        AddrRange(0x90001000, size=(12288000+12288000+16000)) #account for hidden register file
+                        AddrRange(0x90001000, size=(12288000+12288000+81920)) #account for hidden register file
                         #AddrRange(0x91771000, size=16000) # range for SCM memory; added on top of above range
                         ]
 
@@ -99,9 +99,9 @@ class MyCodeletSystem(System):
       if not darts_config: # Running Codelet system with modules for SCM
         # Create Codelet Interface for the CPU
         # Make sure each codelet interface has it's own unique range
-        self.codelet_interface[i].queue_range = AddrRange(start = Addr(0x90000000) + 0x44 * i, 
+        self.codelet_interface[i].queue_range = AddrRange(start = Addr(0x90000000) + 0x4c * i, 
                                                           end = Addr(0x90000000)
-                                                          + 0x44 * (i+1)) #range should be size of codelet_t...
+                                                          + 0x4c * (i+1)) #range should be size of codelet_t...
       
         self.codelet_interface[i].cu_id = i
         # Make sure to initialize the version of L1DCache that connects to the CodeletInterface
@@ -161,8 +161,8 @@ class MyCodeletSystem(System):
     if not darts_config:
       # Create SU
       self.su = SU()
-      tmp_su_range = AddrRange(start = Addr(0x90000000) + 0x44 * numCores,
-                                end = Addr(0x90000000) + 0x44 * numCores
+      tmp_su_range = AddrRange(start = Addr(0x90000000) + 0x4c * numCores,
+                                end = Addr(0x90000000) + 0x4c * numCores
                                 + 0x80) #random number to start with; roughly 8.
                                 # ends at 0x900000b0
       self.su.su_ret_range = tmp_su_range     

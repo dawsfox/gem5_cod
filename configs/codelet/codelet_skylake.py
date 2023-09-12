@@ -86,21 +86,15 @@ if not darts_config:
         #Mapping for the Codelet Interfaces and the SU
         system.cpu[i].workload[0].map(Addr(0x90000000),
                                       Addr(0x90000000),
-                                      0x44 * args.num_cores + 0x80, #Extending to cover space of multiple CodeletInterfaces and the SU 
+                                      0x4c * args.num_cores + 0x80, #Extending to cover space of multiple CodeletInterfaces and the SU 
                                       False) # These addresses should NOT be cacheable
         #Mapping for the register file / hidden register file 
         system.cpu[i].workload[0].map(Addr(0x90001000),
                                       Addr(0x90001000),
                                       #12288000)
-                                      12288000 * 2 + 16000) # Attempting to map a fixed register space 
+                                      12288000 * 2 + 81920) # Attempting to map a fixed register space 
                                       # Size comes from the SCM register config (register file + hidden register file)
         #Mapping for SCM Memory space (mostly input and data initialization)
-        """
-        system.cpu[i].workload[0].map(Addr(0xB4511000), 
-                                      Addr(0xB4511000),
-                                      #0xBAEF000)
-                                      16000)
-        """
 
 print("Beginning simulation!")
 exit_event = m5.simulate()
