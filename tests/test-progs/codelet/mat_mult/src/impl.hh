@@ -12,6 +12,7 @@ void matMult(void * dest, void * src1, void * src2);
 void storeSqTile(void * dest, void * src1, void * src2);
 
 void scm_init();
+void scm_init1280();
 //#define TILE_DIM 128
 #define TILE_DIM 16 
 #define SCM_MEM_SIZE TILE_DIM*TILE_DIM*sizeof(double)*3 // Size enough for 3 square tiles of width 128 doubles
