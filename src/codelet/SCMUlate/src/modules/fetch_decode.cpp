@@ -269,7 +269,7 @@ int scm::fetch_decode_module::tickBehavior()
         case instruction_state::STALL:
           stall++;
           //ITT_TASK_BEGIN(fetch_decode_module_behavior, checkMarkInstructionToSched);
-          if (strcmp(current_pair->first->getInstruction().c_str(), "InitCod") != 0) {
+          if (current_pair->first->getInstruction().find("InitCod") == std::string::npos) {
             //current_pair->second = instruction_state::STALL;
             instructionLevelParallelism.checkMarkInstructionToSched(current_pair);
           } else if (!initScheduled) {
@@ -348,7 +348,7 @@ int scm::fetch_decode_module::tickBehavior()
             case EXECUTE_INST:
               SCMULATE_INFOMSG(4, "Scheduling an EXECUTE_INST %s", current_pair->first->getFullInstruction().c_str());
               //SCMULATE_INFOMSG(4, "EXECUTE_INST has getInstruction: %s", current_pair->first->getInstruction().c_str());
-              if (strcmp(current_pair->first->getInstruction().c_str(), "InitCod_64B")==0) {
+              if (current_pair->first->getInstruction().find("InitCod") != std::string::npos) {
                 current_pair->second = instruction_state::STALL;
                 stallingInstruction = current_pair;
                 initScheduled = gemAttemptAssignExecuteInstruction(current_pair);
