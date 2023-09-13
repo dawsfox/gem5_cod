@@ -7,12 +7,21 @@
 
 #define CODELET_NUM 6
 
+#define TILES 10
+//#define TILE_DIM 16
+#define REG_SIZE (TILE_DIM*TILE_DIM*sizeof(double))
+#define B_offset (REG_SIZE * TILES)
+#define C_offset (REG_SIZE * TILES * 2)
+#define Test_offset (REG_SIZE * TILES * 2 + REG_SIZE)
+#define NumElements_AB ((REG_SIZE*TILES)/sizeof(double))
+#define NumElements_C ((REG_SIZE)/sizeof(double))
+
 // this is a statically allocated codelet graph that should be loaded into SU
 // dependencies are based on the scm program and managed by the SU
 // the last codelet in the list is a dummy codelet with no i/o that 
 // holds in its "fire" field the base pointer of SCM memory
 user_codelet_t codelet_graph[CODELET_NUM] __attribute__ ((section(".codelet_program"))) = {{OP1_WR | OP2_RD | OP3_RD, "LoadSqTile_2048L", loadSqTile},
-                                                                                           {OP1_WR | OP2_RD | OP3_RD, "MatMult_2048L", matMult},
+                                                                                           {OP1_WR | OP1_RD | OP2_RD | OP3_RD, "MatMult_2048L", matMult},
                                                                                            {OP1_RD | OP2_RD | OP3_RD, "StoreSqTile_2048L", storeSqTile},
                                                                                            {OP1_RD, "InitCod_64B", (fire_t)scm_init}, //for single tile version
                                                                                            {OP1_RD, "InitCod1280_64B", (fire_t)scm_init1280}, //for 128x1280 version
@@ -52,11 +61,22 @@ void scm_init() {
 
 void scm_init1280() {
     printf("initializing data space starting at %p\n", SCM_MEMORY_BASE_PTR);
-    double * mem_space = (double *) SCM_MEMORY_BASE_PTR;
-    initMatrix(&(mem_space[0]), TILE_DIM*TILE_DIM*10, 1);                     // initialize input 1 at root, size of 10 tiles
-    initMatrix(&(mem_space[TILE_DIM*TILE_DIM*10]), TILE_DIM*TILE_DIM*10, 1);  // initialize input 2 after first, size of 10 tiles
-    initMatrix(&(mem_space[TILE_DIM*TILE_DIM*10*2]), TILE_DIM*TILE_DIM, 0);   // set output space to zeros after first two, size of 1 tile,
-
+    unsigned char * mem_space = (unsigned char *) SCM_MEMORY_BASE_PTR;
+    initMatrix((double *)&(mem_space[0]), NumElements_AB, 1);                     // initialize input 1 at root, size of 10 tiles
+    initMatrix((double *)&(mem_space[B_offset]), NumElements_AB, 1);  // initialize input 2 after first, size of 10 tiles
+    initMatrix((double *)&(mem_space[C_offset]), NumElements_C, 0);   // set output space to zeros after first two, size of 1 tile,
+    initMatrix((double *)&(mem_space[Test_offset]), NumElements_C, 0);   // set check space to zeros after first two, size of 1 tile,
+    // m, n, p : MDIM*TILE_DIM, NDIM*TILE_DIM, KDIM*TILE_DIM
+    double * a = (double *)&(mem_space[0]);
+    double * b = (double *)&(mem_space[B_offset]);
+    double * c = (double *)&(mem_space[Test_offset]);
+    for (int i=0; i<TILE_DIM; i=i+1){
+      for (int j=0; j<TILE_DIM; j=j+1){
+         for (int k=0; k<TILE_DIM*TILES; k=k+1){
+            c[i*TILE_DIM + j]=(c[i*TILE_DIM + j])+((a[i*TILE_DIM*TILES + k])*(b[k*TILE_DIM + j]));
+         }
+      }
+    }
 }
 
 void loadSqTile(void * dest, void * src1, void * src2) {
@@ -66,8 +86,6 @@ void loadSqTile(void * dest, void * src1, void * src2) {
   uint64_t ldistance = (uint64_t) src2; //change for immediate value
 
   ldistance *= sizeof(double);
-  //printf("address reg: 0x%lx; ldistance: 0x%lx; scm memory: %p; first element: %lf\n", address_reg, ldistance, SCM_MEMORY_BASE_PTR, ((double *)SCM_MEMORY_BASE_PTR)[2]);
-  //fflush(NULL);
   for (uint64_t i=0; i<TILE_DIM; i++) {
     double *addressStart = (double *) (SCM_MEMORY_BASE_PTR + address_reg + ldistance * i); // Address L2 memory to a pointer of the runtime
     //printf("loading tile from %p to %p\n", addressStart, destReg+TILE_DIM*i);
@@ -87,7 +105,10 @@ void matMult(void * dest, void * src1, void * src2) {
       for (int k=0; k<TILE_DIM; k=k+1) {
         C[i*TILE_DIM + j]+=((A[i*TILE_DIM + k])*(B[k*TILE_DIM + j]));
       }
+      //printf("%lf ", C[i*TILE_DIM + j]);
+      //fflush(NULL);
     }
+    //printf(" \n");
   }
   printf("matMult ending\n");
   fflush(NULL);
@@ -110,17 +131,21 @@ void storeSqTile(void * dest, void * src1, void * src2) {
   /*
   double * result_mat = (double *) (SCM_MEMORY_BASE_PTR + address_reg); //index SCM mem space to where result is store
   double * check_mat = (double *) (SCM_MEMORY_BASE_PTR + address_reg + TILE_DIM*TILE_DIM*8); //index one matrix size more for the matrix made in init
-  //printf("reading result_mat from %p and check mat from %p\n", result_mat, check_mat);
+   */
   bool correct = true;
+  double * result_mat = (double *) (SCM_MEMORY_BASE_PTR + address_reg);
+  double * check_mat = (double *)  (SCM_MEMORY_BASE_PTR + Test_offset);
+  printf("reading result_mat from %p and check mat from %p\n", result_mat, check_mat);
   for (int i=0; i<TILE_DIM*TILE_DIM; i++) {
     if (result_mat[i] != check_mat[i]) {
       printf("error: element %d does not match: %lf vs %lf\n", i, result_mat[i], check_mat[i]);
+      fflush(NULL);
       correct = false;
     }
   }
   if (correct) {
     printf("Matrix multiplication completed! No errors detected\n");
-  }*/
+  }
   printf("storeSqTile ending\n");
   fflush(NULL);
 }

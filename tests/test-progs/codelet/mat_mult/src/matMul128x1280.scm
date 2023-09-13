@@ -20,8 +20,8 @@ loop:
   COD LoadSqTile_2048L R2048L_1, R64B_1, 160; //  1280; //Load A
   COD LoadSqTile_2048L R2048L_2, R64B_2, 16;  //  128; //Load B
   COD MatMult_2048L R2048L_3, R2048L_1, R2048L_2;
-  ADD R64B_1, R64B_1, R64B_8; // *A + 1024
-  ADD R64B_2, R64B_2, R64B_9; // *B + 131072
+  ADD R64B_1, R64B_1, R64B_8; // *A + 128 (increment by 1 row)
+  ADD R64B_2, R64B_2, R64B_9; // *B + 2048 (increment by 1 tile)
   JMPLBL loop;
 
 afterLoop:
