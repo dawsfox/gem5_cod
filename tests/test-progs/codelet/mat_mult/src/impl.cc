@@ -133,8 +133,10 @@ void storeSqTile(void * dest, void * src1, void * src2) {
   double * check_mat = (double *) (SCM_MEMORY_BASE_PTR + address_reg + TILE_DIM*TILE_DIM*8); //index one matrix size more for the matrix made in init
    */
   bool correct = true;
-  double * result_mat = (double *) (SCM_MEMORY_BASE_PTR + address_reg);
-  double * check_mat = (double *)  (SCM_MEMORY_BASE_PTR + Test_offset);
+  //double * result_mat = (double *) (SCM_MEMORY_BASE_PTR + address_reg);
+  //double * check_mat = (double *)  (SCM_MEMORY_BASE_PTR + Test_offset);
+  double * result_mat = (double *) SCM_MEMORY(address_reg);
+  double * check_mat = (double *)  SCM_MEMORY(Test_offset);
   printf("reading result_mat from %p and check mat from %p\n", result_mat, check_mat);
   for (int i=0; i<TILE_DIM*TILE_DIM; i++) {
     if (result_mat[i] != check_mat[i]) {
