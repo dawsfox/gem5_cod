@@ -54,8 +54,8 @@ class MyCodeletSystem(System):
       self.mem_ranges = [AddrRange('100MB'), # For kernel
                         AddrRange(0xC0000000, size=0x100000), # For I/0
                         AddrRange(Addr('4GB'), size=mem_size), # All data
-                        #AddrRange(0x90001000, size=12288000)
-                        AddrRange(0x90001000, size=(12288000+12288000+81920)) #account for hidden register file
+                        #AddrRange(0x90001000, size=(12288000+12288000+81920)) #account for hidden register file
+                        AddrRange(0x90001000, size=(12288000+12288000+3932160)) #account for hidden register file 128x128x10x3x8
                         #AddrRange(0x91771000, size=16000) # range for SCM memory; added on top of above range
                         ]
 

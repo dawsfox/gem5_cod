@@ -91,8 +91,8 @@ if not darts_config:
         #Mapping for the register file / hidden register file 
         system.cpu[i].workload[0].map(Addr(0x90001000),
                                       Addr(0x90001000),
-                                      #12288000)
-                                      12288000 * 2 + 81920) # Attempting to map a fixed register space 
+                                      #12288000 * 2 + 81920) # Attempting to map a fixed register space 
+                                      12288000 * 2 + 3932160) # Attempting to map a fixed register space 
                                       # Size comes from the SCM register config (register file + hidden register file)
         #Mapping for SCM Memory space (mostly input and data initialization)
 
