@@ -78,6 +78,7 @@ namespace scm {
       instructions_buffer_module inst_buff_m;
       instruction_state_pair * stallingInstruction;
       //const bool debugger;
+      bool initScheduled = false;
 
       TIMERS_COUNTERS_GUARD(
         std::string su_timer_name;
@@ -88,7 +89,7 @@ namespace scm {
       fetch_decode_module() = delete;
       //fetch_decode_module(inst_mem_module * const inst_mem, control_store_module * const, bool * const aliveSig, ILP_MODES ilp_mode);
       // added pointer to SU that owns the fetch decode so it can make calls upwards when it's time to schedule codelets
-      fetch_decode_module(inst_mem_module * const inst_mem, control_store_module * const, bool * const aliveSig, ILP_MODES ilp_mode, gem5::SU * owner);
+      fetch_decode_module(inst_mem_module * const inst_mem, control_store_module * const, bool * const aliveSig, ILP_MODES ilp_mode, gem5::SU * owner, uint64_t root);
 
       /** \brief logic to execute an instruction
        * 
@@ -137,6 +138,8 @@ namespace scm {
       */
       inline bool fetchOperandsFromMem(instruction_state_pair * inst);
 
+      inline void executeMemoryInstruction(instruction_state_pair * inst);
+
       /** \brief get the SU number
        *
        *  We select a CU and we assign a new codelet to it. When it is done, we delete the codelet
@@ -155,6 +158,8 @@ namespace scm {
        * decode unit for use in the gem5 SU implementation
       */
       int tickBehavior();
+
+      gem5::SU * getOwner() { return(owner); }
 
       TIMERS_COUNTERS_GUARD(
         void setTimerCounter(timers_counters * newTC) { 

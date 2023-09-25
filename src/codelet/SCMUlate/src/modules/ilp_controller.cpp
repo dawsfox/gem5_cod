@@ -1,4 +1,6 @@
 #include "codelet/SCMUlate/include/modules/ilp_controller.hpp"
+#include "codelet/SCMUlate/include/modules/fetch_decode.hpp"
+#include "codelet/su.hh"
 
 namespace scm {
 
@@ -258,11 +260,13 @@ namespace scm {
                 if (available && original_renamed_reg != new_renamed_reg) {
                   SCMULATE_INFOMSG(5, "Copying register %s to register %s", original_renamed_reg.reg_name.c_str(), new_renamed_reg.reg_name.c_str());
                   //printf("Copying register %s to register %s\n", original_renamed_reg.reg_name.c_str(), new_renamed_reg.reg_name.c_str());
-                  std::memcpy(new_renamed_reg.reg_ptr, original_renamed_reg.reg_ptr, original_renamed_reg.reg_size_bytes);
+                  //std::memcpy(new_renamed_reg.reg_ptr, original_renamed_reg.reg_ptr, original_renamed_reg.reg_size_bytes);
+                  // replace with call upwards to SU to perform functional copies since registers are in emulated address space
+                  owner->getOwner()->initRegMemCopy(&new_renamed_reg, &original_renamed_reg);
                 }
 
 
-                // Fith. Apply renaming, and subscribe if not available
+                // Fifth. Apply renaming, and subscribe if not available
                 for (int other_op_num = 1; other_op_num <= MAX_NUM_OPERANDS; ++other_op_num) {
                   if (already_processed_operands.find(other_op_num) == already_processed_operands.end()) {
                     operand_t& other_op = inst->getOp(other_op_num);
@@ -351,7 +355,7 @@ namespace scm {
           return otherReg;
         }
         newReg.reg_name = std::string("R_ren_") + newReg.reg_size + std::string("_") + std::to_string(newReg.reg_number);
-        SCMULATE_INFOMSG(4, "Register %s mapped to %s with renaming", otherReg.reg_name.c_str(), newReg.reg_name.c_str());
+        SCMULATE_INFOMSG(4, "Register %s mapped to %s (at %p) with renaming", otherReg.reg_name.c_str(), newReg.reg_name.c_str(), newReg.reg_ptr);
         return newReg;
       }
 
@@ -424,7 +428,12 @@ namespace scm {
                     } else {
                       // Broadcasting
                       // TODO: REMINDER: This may result in multiple copies of the same value. We must change it accordingly
-                      std::memcpy(other_inst_state_pair->first->getOp(it_broadcast->second).value.reg.reg_ptr, it->first.reg_ptr, it->first.reg_size_bytes);
+                      //std::memcpy(other_inst_state_pair->first->getOp(it_broadcast->second).value.reg.reg_ptr, it->first.reg_ptr, it->first.reg_size_bytes);
+                      decoded_reg_t tmp = it->first;
+                      SCMULATE_INFOMSG(3, "FD module calling upwards to SU to copy register contents to %p", other_inst_state_pair->first->getOp(it_broadcast->second).value.reg.reg_ptr);
+                      owner->getOwner()->initRegMemCopy(&(other_inst_state_pair->first->getOp(it_broadcast->second).value.reg),
+                                                        //&(it->first));
+                                                        &tmp);
                       // Marking as ready
                     }
                     other_inst_state_pair->first->getOp(it_broadcast->second).full_empty = true;

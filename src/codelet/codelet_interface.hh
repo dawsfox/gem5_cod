@@ -3,7 +3,9 @@
 
 #include "base/statistics.hh"
 #include "mem/port.hh"
+#include "mem/qport.hh"
 #include "params/CodeletInterface.hh"
+#include "debug/CodeletInterface.hh"
 #include "sim/clocked_object.hh"
 #include "codelet/codelet.hh"
 #include <queue>
@@ -14,6 +16,7 @@ class CodeletInterface : public ClockedObject
 {
   private:
 
+    /*
     class CPUSidePort : public ResponsePort
     {
       private:
@@ -33,13 +36,6 @@ class CodeletInterface : public ClockedObject
 
         void sendPacket(PacketPtr pkt);
 
-        /**
-         * Get a list of the non-overlapping address ranges the owner is
-         * responsible for. All response ports must override this function
-         * and return a populated list with at least one item.
-         *
-         * @return a list of ranges responded to
-         */
         AddrRangeList getAddrRanges() const override;
 
         void trySendRetry();
@@ -50,24 +46,79 @@ class CodeletInterface : public ClockedObject
 
         void recvFunctional(PacketPtr pkt) override;
 
-        /**
-         * Receive a timing request from the request port.
-         *
-         * @param the packet that the requestor sent
-         * @return whether this object can consume to packet. If false, we
-         *         will call sendRetry() when we can try to receive this
-         *         request again.
-         */
         bool recvTimingReq(PacketPtr pkt) override;
 
-        /**
-         * Called by the request port if sendTimingResp was called on this
-         * response port (causing recvTimingResp to be called on the request
-         * port) and was unsuccessful.
-         */
         void recvRespRetry() override;
     };
+     */
 
+    class CIResponsePort : public QueuedResponsePort
+    {
+
+      public:
+
+        /** Do not accept any new requests. */
+        void setBlocked();
+
+        /** Return to normal operation and accept new requests. */
+        void clearBlocked();
+
+        bool isBlocked() const { return blocked; }
+
+      protected:
+
+        CIResponsePort(const std::string &_name, CodeletInterface *_ci,
+                       const std::string &_label);
+
+        /** A normal packet queue used to store responses. */
+        RespPacketQueue queue;
+
+        bool blocked = false;
+
+        bool mustSendRetry;
+
+      private:
+
+        void processSendRetry();
+
+        EventFunctionWrapper sendRetryEvent;
+
+    };
+
+    /**
+     * The CPU-side port extends the base cache response port with access
+     * functions for functional, atomic and timing requests.
+     */
+    class CPUSidePort : public CIResponsePort
+    {
+      private:
+
+        // a pointer to our specific cache implementation
+        CodeletInterface *ci;
+
+      protected:
+        virtual bool recvTimingSnoopResp(PacketPtr pkt) override { return false;}
+
+        virtual bool tryTiming(PacketPtr pkt) override;
+
+        virtual bool recvTimingReq(PacketPtr pkt) override;
+
+        //virtual Tick recvAtomic(PacketPtr pkt) override;
+        Tick recvAtomic(PacketPtr pkt) override
+        { panic("recvAtomic unimpl."); }
+
+        virtual void recvFunctional(PacketPtr pkt) override;
+
+        virtual AddrRangeList getAddrRanges() const override;
+
+      public:
+
+        CPUSidePort(const std::string &_name, CodeletInterface *_ci,
+                    const std::string &_label);
+
+    };
+
+    /*
     class MemSidePort : public RequestPort
     {
       private:
@@ -84,22 +135,127 @@ class CodeletInterface : public ClockedObject
       protected:
         bool recvTimingResp(PacketPtr pkt) override;
 
-        /**
-         * Called by the response port if sendTimingReq was called on this
-         * request port (causing recvTimingReq to be called on the response
-         * port) and was unsuccesful.
-         */
         void recvReqRetry() override;
 
-        /**
-         * Called to receive an address range change from the peer response
-         * port. The default implementation ignores the change and does
-         * nothing. Override this function in a derived class if the owner
-         * needs to be aware of the address ranges, e.g. in an
-         * interconnect component like a bus.
-         */
         void recvRangeChange() override;
 
+    };
+     */
+    class CIRequestPort : public QueuedRequestPort
+    {
+
+      public:
+
+        /**
+         * Schedule a send of a request packet (from the MSHR). Note
+         * that we could already have a retry outstanding.
+         */
+        void schedSendEvent(Tick time)
+        {
+            //DPRINTF(CodeletInterface, "Mem port scheduling send event at %llu\n", time);
+            reqQueue.schedSendEvent(time);
+        }
+
+      protected:
+
+        CIRequestPort(const std::string &_name, CodeletInterface *_ci,
+                        ReqPacketQueue &_reqQueue,
+                        SnoopRespPacketQueue &_snoopRespQueue) :
+            QueuedRequestPort(_name, _ci, _reqQueue, _snoopRespQueue)
+        { }
+
+        /**
+         * Memory-side port always snoops.
+         * (not on my watch it doesn't)
+         * @return always false
+         */
+        virtual bool isSnooping() const { return false; }
+    };
+
+    /**
+     * Override the default behaviour of sendDeferredPacket to enable
+     * the memory-side cache port to also send requests based on the
+     * current MSHR status. This queue has a pointer to our specific
+     * cache implementation and is used by the MemSidePort.
+     */
+    class CIReqPacketQueue : public ReqPacketQueue
+    {
+
+      protected:
+
+        CodeletInterface &ci;
+        SnoopRespPacketQueue &snoopRespQueue;
+
+      public:
+
+        CIReqPacketQueue(CodeletInterface &ci, RequestPort &port,
+                            SnoopRespPacketQueue &snoop_resp_queue,
+                            const std::string &label) :
+            ReqPacketQueue(ci, port, label), ci(ci),
+            snoopRespQueue(snoop_resp_queue) { }
+
+        /**
+         * Override the normal sendDeferredPacket and do not only
+         * consider the transmit list (used for responses), but also
+         * requests.
+         */
+        //virtual void sendDeferredPacket() {};
+
+        /**
+         * Check if there is a conflicting snoop response about to be
+         * send out, and if so simply stall any requests, and schedule
+         * a send event at the same time as the next snoop response is
+         * being sent out.
+         *
+         * @param pkt The packet to check for conflicts against.
+         */
+        bool checkConflictingSnoop(const PacketPtr pkt)
+        {   /*
+            if (snoopRespQueue.checkConflict(pkt, cache.blkSize)) {
+                DPRINTF(CachePort, "Waiting for snoop response to be "
+                        "sent\n");
+                Tick when = snoopRespQueue.deferredPacketReadyTime();
+                schedSendEvent(when);
+                return true;
+            }
+            */
+            return false;
+        }
+    };
+
+
+    /**
+     * The memory-side port extends the base cache request port with
+     * access functions for functional, atomic and timing snoops.
+     */
+    class MemSidePort : public CIRequestPort
+    {
+      private:
+
+        /** The cache-specific queue. */
+        CIReqPacketQueue _reqQueue;
+
+        SnoopRespPacketQueue _snoopRespQueue;
+
+        // a pointer to our specific cache implementation
+        CodeletInterface *ci;
+
+      protected:
+
+        virtual void recvTimingSnoopReq(PacketPtr pkt) {};
+
+        virtual bool recvTimingResp(PacketPtr pkt);
+
+        virtual Tick recvAtomicSnoop(PacketPtr pkt) {};
+
+        virtual void recvFunctionalSnoop(PacketPtr pkt) {};
+
+        void recvRangeChange();
+
+      public:
+
+        MemSidePort(const std::string &_name, CodeletInterface *_ci,
+                    const std::string &_label);
     };
 
     class CodSideReqPort : public RequestPort
@@ -216,7 +372,7 @@ class CodeletInterface : public ClockedObject
      *
      * @param the packet to send to the cpu side
      */
-    void sendResponse(PacketPtr pkt);
+    void sendResponse(PacketPtr pkt, int port_id);
 
     /**
      * Handle a packet functionally. Update the data on a write and get the
@@ -266,6 +422,9 @@ class CodeletInterface : public ClockedObject
     // by SU through the interface
     AddrRangeList getLocAddrRanges() const;
 
+    // Used for handling responses from memory requests
+    void recvMemTimingResp(PacketPtr pkt);
+
     /**
      * Tell the CPU side to ask for our memory ranges.
      */
@@ -294,8 +453,8 @@ class CodeletInterface : public ClockedObject
     Addr suRetAddr;
 
     /// Instantiation of the CPU-side ports, memory side port, and Codelet Side port
-    // CPUSidePorts should be used for normal mem requests, as well as popping Codelets from queue (mem mapped)
-    std::vector<CPUSidePort> cpuPorts;
+    // CPUSidePort should be used for normal mem requests, as well as popping Codelets from queue (mem mapped)
+    CPUSidePort cpuPort;
     MemSidePort memPort;
     // codReqPorts used for Codelet Retirement and decrementing dependencies
     //std::vector<CodSideReqPort> codReqPorts;

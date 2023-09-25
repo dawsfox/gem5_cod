@@ -230,19 +230,19 @@ namespace scm {
         // Mark the registers
         if (inst->getOp1().type == operand_t::REGISTER) {
           uint_fast16_t io = inst->getOpIO() & (OP_IO::OP1_RD | OP_IO::OP1_WR);
-          SCMULATE_INFOMSG(5, "Mariking register %s as busy with IO %lX", inst->getOp1().value.reg.reg_name.c_str(), io);
+          SCMULATE_INFOMSG(5, "Marking register %s as busy with IO %lX", inst->getOp1().value.reg.reg_name.c_str(), io);
           register_reservation reserv(inst->getOp1().value.reg.reg_ptr, io);
           busyRegisters.insert(reserv);
         }
         if (inst->getOp2().type == operand_t::REGISTER) {
           uint_fast16_t io = (inst->getOpIO() & (OP_IO::OP2_RD | OP_IO::OP2_WR)) >> 2;
-          SCMULATE_INFOMSG(5, "Mariking register %s as busy with IO %lX", inst->getOp2().value.reg.reg_name.c_str(), io);
+          SCMULATE_INFOMSG(5, "Marking register %s as busy with IO %lX", inst->getOp2().value.reg.reg_name.c_str(), io);
           register_reservation reserv(inst->getOp2().value.reg.reg_ptr, io);
           busyRegisters.insert(reserv);          
           }
         if (inst->getOp3().type == operand_t::REGISTER) {
           uint_fast16_t io = (inst->getOpIO() & (OP_IO::OP3_RD | OP_IO::OP3_WR)) >> 4;
-          SCMULATE_INFOMSG(5, "Mariking register %s as busy with IO %lX", inst->getOp3().value.reg.reg_name.c_str(), io);
+          SCMULATE_INFOMSG(5, "Marking register %s as busy with IO %lX", inst->getOp3().value.reg.reg_name.c_str(), io);
           register_reservation reserv(inst->getOp3().value.reg.reg_ptr, io);
           busyRegisters.insert(reserv);          
           }
@@ -261,17 +261,17 @@ namespace scm {
 
         if (inst->getOp1().type == operand_t::REGISTER) {
           uint_fast16_t io = (inst->getOpIO() & (OP_IO::OP1_RD | OP_IO::OP1_WR));
-          SCMULATE_INFOMSG(5, "Unmariking register %s as busy with IO %lX", inst->getOp1().value.reg.reg_name.c_str(), io );
+          SCMULATE_INFOMSG(5, "Unmarking register %s as busy with IO %lX", inst->getOp1().value.reg.reg_name.c_str(), io );
           eraseReg(inst->getOp1().value.reg.reg_ptr, io);
         }
         if (inst->getOp2().type == operand_t::REGISTER) {
           uint_fast16_t io = (inst->getOpIO() & (OP_IO::OP2_RD | OP_IO::OP2_WR)) >> 2;
-          SCMULATE_INFOMSG(5, "Unmariking register %s as busy with IO %lX",inst->getOp2().value.reg.reg_name.c_str(), io );
+          SCMULATE_INFOMSG(5, "Unmarking register %s as busy with IO %lX",inst->getOp2().value.reg.reg_name.c_str(), io );
           eraseReg(inst->getOp2().value.reg.reg_ptr, io);
         }
         if (inst->getOp3().type == operand_t::REGISTER) {
           uint_fast16_t io = (inst->getOpIO() & (OP_IO::OP3_RD | OP_IO::OP3_WR)) >> 4;
-          SCMULATE_INFOMSG(5, "Unmariking register %s as busy with IO %lX",inst->getOp3().value.reg.reg_name.c_str(), io);
+          SCMULATE_INFOMSG(5, "Unmarking register %s as busy with IO %lX",inst->getOp3().value.reg.reg_name.c_str(), io);
           eraseReg(inst->getOp3().value.reg.reg_ptr, io);
         }
         SCMULATE_INFOMSG(5, "The number of busy regs is %lu", this->busyRegisters.size());
@@ -470,8 +470,11 @@ namespace scm {
    * other data structures (have already been processed). On re-entry to checkMarkInstructionsToSched, we check
    * if there is a previous hazzard, and we ignore current instruction in favor of resolving the hazzard. 
    */
+  class fetch_decode_module; // forward dec.
+
   class ilp_OoO {
     private:
+      fetch_decode_module * owner;
       reg_file_module * hidden_register_file;
 
       // We must maintain a reference to the operand and its specific operand. The operand is maintained
@@ -494,7 +497,12 @@ namespace scm {
       std::unordered_set<int> already_processed_operands;
 
     public:
-      ilp_OoO() : hidden_register_file(new reg_file_module()), hazzard_inst_state(nullptr) { }
+      ilp_OoO(fetch_decode_module * owner) : owner(owner), hidden_register_file(new reg_file_module()), hazzard_inst_state(nullptr) { }
+      ilp_OoO(fetch_decode_module * owner, uint64_t hidden_reg_file_root) : owner(owner),
+                       hidden_register_file(new reg_file_module((scm::register_file_t *)hidden_reg_file_root)),
+                       hazzard_inst_state(nullptr) { }
+      
+      // hidden register file needs to go after the normal one at a fixed address so it can also be memory mapped
       /** \brief check if instruction can be scheduled 
       * Returns true if the instruction could be scheduled according to
       * the current detected hazards. If it is possible to schedule it, then
@@ -543,11 +551,21 @@ namespace scm {
 
   class ilp_controller {
       const ILP_MODES SCMULATE_ILP_MODE;
+      scm::fetch_decode_module * owner;
       ilp_sequential seq_ctrl;
       ilp_superscalar supscl_ctrl;
       ilp_OoO ooo_ctrl;
     public:
-      ilp_controller (const ILP_MODES ilp_mode) : SCMULATE_ILP_MODE(ilp_mode) {
+      ilp_controller (const ILP_MODES ilp_mode, scm::fetch_decode_module * owner) : SCMULATE_ILP_MODE(ilp_mode),
+        owner(owner),
+        ooo_ctrl(owner) {
+        SCMULATE_INFOMSG_IF(3, SCMULATE_ILP_MODE == ILP_MODES::SEQUENTIAL, "Using %d ILP_MODES::SEQUENTIAL",SCMULATE_ILP_MODE );
+        SCMULATE_INFOMSG_IF(3, SCMULATE_ILP_MODE == ILP_MODES::SUPERSCALAR, "Using %d ILP_MODES::SUPERSCALAR", SCMULATE_ILP_MODE);
+        SCMULATE_INFOMSG_IF(3, SCMULATE_ILP_MODE == ILP_MODES::OOO, "Using %d ILP_MODES::OOO", SCMULATE_ILP_MODE);
+       }
+      ilp_controller (const ILP_MODES ilp_mode, scm::fetch_decode_module * owner, uint64_t root) : SCMULATE_ILP_MODE(ilp_mode),
+        owner(owner),
+        ooo_ctrl(owner, root) {
         SCMULATE_INFOMSG_IF(3, SCMULATE_ILP_MODE == ILP_MODES::SEQUENTIAL, "Using %d ILP_MODES::SEQUENTIAL",SCMULATE_ILP_MODE );
         SCMULATE_INFOMSG_IF(3, SCMULATE_ILP_MODE == ILP_MODES::SUPERSCALAR, "Using %d ILP_MODES::SUPERSCALAR", SCMULATE_ILP_MODE);
         SCMULATE_INFOMSG_IF(3, SCMULATE_ILP_MODE == ILP_MODES::OOO, "Using %d ILP_MODES::OOO", SCMULATE_ILP_MODE);

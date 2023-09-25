@@ -73,8 +73,8 @@ else:
     print("Invalid Codelet setting; Enter either SCM or DARTS")
 
 scm_file_name = args.scm_file
-#scm_file_name = "/home/dfox/gem5_cod/tests/test-progs/codelet/vec_add/src/test_prog.scm"
-#scm_file_name = "/home/dfox/gem5_cod/tests/test-progs/codelet/chain/src/chain.scm"
+if darts_config:
+    scm_file_name = ""
 system = TestSystem(scm_file_name, args.num_cores, darts_config)
 system.setTestBinary(args.binary, args.num_cores, darts_config)
 root = Root(full_system = False, system = system)
@@ -83,15 +83,18 @@ m5.instantiate()
 if not darts_config:
     # With multiple CodeletInterfaces, we need to make sure in the CU runtime the addresses are checked properly
     for i in range(args.num_cores):
+        #Mapping for the Codelet Interfaces and the SU
         system.cpu[i].workload[0].map(Addr(0x90000000),
                                       Addr(0x90000000),
-                                      0x44 * args.num_cores + 0x80, #Extending to cover space of multiple CodeletInterfaces and the SU 
+                                      0x4c * args.num_cores + 0x80, #Extending to cover space of multiple CodeletInterfaces and the SU 
                                       False) # These addresses should NOT be cacheable
-    
+        #Mapping for the register file / hidden register file 
         system.cpu[i].workload[0].map(Addr(0x90001000),
                                       Addr(0x90001000),
-                                      12288000); # Attempting to map a fixed register space 
-                                      # Size comes from the SCM register config
+                                      #12288000 * 2 + 81920) # Attempting to map a fixed register space 
+                                      12288000 * 2 + 3932160) # Attempting to map a fixed register space 
+                                      # Size comes from the SCM register config (register file + hidden register file)
+        #Mapping for SCM Memory space (mostly input and data initialization)
 
 print("Beginning simulation!")
 exit_event = m5.simulate()

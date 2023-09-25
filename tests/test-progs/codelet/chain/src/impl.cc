@@ -12,6 +12,6 @@ user_codelet_t codelet_graph[CODELET_NUM] __attribute__ ((section(".codelet_prog
 
 
 void emptyCodFire(void * dest, void * src1, void * src2) {
-    printf("codelet firing\n");
+    //printf("codelet firing\n");
     return;
 }

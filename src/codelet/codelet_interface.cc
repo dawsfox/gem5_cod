@@ -22,7 +22,8 @@ CodeletInterface::CodeletInterface(const CodeletInterfaceParams &params) :
     queueRange(params.queue_range),
     cuId(params.cu_id),
     suRetAddr(params.su_ret_addr),
-    memPort(params.name + ".mem_side_port", this),
+    cpuPort(params.name + ".cpu_side_port", this, "CPUSidePort"),
+    memPort(params.name + ".mem_side_port", this, "MemSidePort"),
     codReqPort(params.name + "cod_side_req_port", this),
     codRespPort(params.name + ".cod_side_resp_port", this),
     blocked(false), originalPacket(nullptr), waitingPortId(-1), stats(this)
@@ -31,9 +32,11 @@ CodeletInterface::CodeletInterface(const CodeletInterfaceParams &params) :
     // the CPUSidePort for each connection. This member of params is
     // automatically created depending on the name of the vector port and
     // holds the number of connections to this port name
+    /*
     for (int i = 0; i < params.port_cpu_side_ports_connection_count; ++i) {
-        cpuPorts.emplace_back(name() + csprintf(".cpu_side_ports[%d]", i), i, this);
+        cpuPorts.emplace_back(name() + csprintf(".cpu_side_ports[%d]", i), i, this, "CPUSidePort" + csprintf("[%d]", i));
     }
+     */
     // removing second CodSideReqPort -- not needed, avoiding handling port ID
     /*
     for (int i = 0; i < params.port_cod_side_req_ports_connection_count; i++) {
@@ -61,9 +64,9 @@ CodeletInterface::getPort(const std::string &if_name, PortID idx)
         panic_if(idx != InvalidPortID,
                  "Mem side of codelet interface not a vector port");
         return(memPort);
-    } else if (if_name == "cpu_side_ports" && idx < cpuPorts.size()) {
+    } else if (if_name == "cpu_side_port") {
         // We should have already created all of the ports in the constructor
-        return(cpuPorts[idx]);
+        return(cpuPort);
     } else if (if_name == "cod_side_req_port") {
         panic_if(idx != InvalidPortID,
                  "Cod side req. port of codelet interface not a vector port");
@@ -80,38 +83,6 @@ CodeletInterface::getPort(const std::string &if_name, PortID idx)
 
 // -------------------------------------------------------------------------------------------
 
-void
-CodeletInterface::CPUSidePort::sendPacket(PacketPtr pkt)
-{
-    panic_if(blockedPacket != nullptr, "Should never try to send if blocked!");
-
-    // If we can't send the packet across the port, store it for later.
-    DPRINTF(CodeletInterface, "Sending %s to CPU\n", pkt->print());
-    if (!sendTimingResp(pkt)) {
-        DPRINTF(CodeletInterface, "failed!\n");
-        blockedPacket = pkt;
-    }
-}
-
-void
-CodeletInterface::CPUSidePort::trySendRetry()
-{
-    if (needRetry && blockedPacket == nullptr) {
-        // Only send a retry if the port is now completely free
-        needRetry = false;
-        DPRINTF(CodeletInterface, "Sending retry req.\n");
-        sendRetryReq();
-    }
-}
-
-void
-CodeletInterface::CPUSidePort::recvFunctional(PacketPtr pkt)
-{
-    // Just forward to the interface
-    // handleFunctional should decide whether to forward or do a queue operation
-    return owner->handleFunctional(pkt, 0);
-}
-
 
 void
 CodeletInterface::handleFunctional(PacketPtr pkt, int port_id)
@@ -120,13 +91,13 @@ CodeletInterface::handleFunctional(PacketPtr pkt, int port_id)
     Addr reqAddr = pkt->getAddr();
     if (queueRange.contains(reqAddr)) {
         if(accessFunctional(pkt, port_id)) {
-            sendResponse(pkt);
+            sendResponse(pkt, port_id);
             return;
         }
         else {
             // big question: what to do if the codelet pop fails? introduce a NullCodelet??
             // ignore for now....
-            sendResponse(pkt);
+            sendResponse(pkt, port_id);
         }
     }
     // also will have to add routing to CU / codelet ports here later.....
@@ -143,13 +114,12 @@ CodeletInterface::accessFunctional(PacketPtr pkt, int port_id)
     if (pkt->isRead()) {
         Addr reqAddr = pkt->getAddr(); // the address trying to be read
         auto data = pkt->getPtr<uint8_t>(); // pointer to data field of the packet
-        //if (reqAddr >= Addr(0x90000000) + sizeof(runt_codelet_t)) { // if requested address is not in the activeCodelet space
         if (reqAddr >= queueRange.start() + sizeof(runt_codelet_t)) { // if requested address is not in the activeCodelet space
             // CPU must be trying to read codeletAvailable flag
             pkt->makeResponse();
             std::memcpy(data, &codeletAvailable, pkt->getSize());
             DPRINTF(CodeletInterfaceQueue, "CPU reading codeletAvailable flag = %x\n", codeletAvailable);
-            sendResponse(pkt); // send back to origin port 
+            sendResponse(pkt, port_id); // send back to origin port 
             return(true);
         }
         assert(codeletAvailable != 0); // activeCodelet read should never come when available flag is false
@@ -162,7 +132,7 @@ CodeletInterface::accessFunctional(PacketPtr pkt, int port_id)
         std::memcpy(data, fieldPtr, pkt->getSize()); //only copy data of size that was requested
         DPRINTF(CodeletInterfaceQueue, "returning field at %lx (based on offset %lx) that has data %lx\n", (unsigned long) fieldPtr, (unsigned long)codOffset, (unsigned long)*((unsigned long *)data));
         DPRINTF(CodeletInterfaceQueue, "activeCodelet is: %lx %p %p %p %s\n", (unsigned long) toPop.fire, toPop.dest, toPop.src1, toPop.src2, toPop.name);
-        sendResponse(pkt); // send back to origin port 
+        sendResponse(pkt, port_id); // send back to origin port 
         return(true);
     }
     // InvalidPortID means that this write request is from the SU
@@ -184,7 +154,13 @@ CodeletInterface::accessFunctional(PacketPtr pkt, int port_id)
         DPRINTF(CodeletInterfaceQueue, "making response for packet %s", pkt->print());
         pkt->makeResponse(); // with no data modification, because it was a write
         DPRINTF(CodeletInterfaceQueue, "response made: %s\n", pkt->print());
-        sendResponse(pkt); // send back to origin port 
+        sendResponse(pkt, port_id); // send back to origin port 
+        // if the CPU port is blocked because of this Codelet push, unblock it now that we're done
+        /*
+        if (cpuPort.isBlocked()) {
+            cpuPort.clearBlocked();
+        }
+        */
         return(true);
     }
     // A valid port ID means this request is from the CPU, and it is a write
@@ -198,16 +174,16 @@ CodeletInterface::accessFunctional(PacketPtr pkt, int port_id)
         // copy active codelet to send to SU so it can retire the associated instruction
         //runt_codelet_t * toRetire = new runt_codelet_t;
         retire_data_t * toRetire = new retire_data_t;
-        memcpy(toRetire, &activeCodelet, sizeof(runt_codelet_t));
+        memcpy(&(toRetire->toRet), &activeCodelet, sizeof(runt_codelet_t));
         toRetire->cuId = cuId; 
         // perform local codelet retirement; stage new codelet or set codeletAvailable to 0
         if (codQueue.empty()) { //if the queue is empty, no more codelets currently available
-            DPRINTF(CodeletInterfaceQueue, "CPU retiring Codelet; no more Codelets available\n");
+            DPRINTF(CodeletInterfaceQueue, "CPU retiring Codelet %s with cuId %d; no more Codelets available\n", activeCodelet.name, toRetire->cuId);
             codeletAvailable = 0;
         } else { // if not, simply stage the next codelet from the queue
             runt_codelet_t toPush = codQueue.front();
             activeCodelet = toPush;
-            DPRINTF(CodeletInterfaceQueue, "CPU retiring Codelet; setting new activeCodelet\n");
+            DPRINTF(CodeletInterfaceQueue, "CPU retiring Codelet %s with cuId %d; setting new activeCodelet %s\n", toRetire->toRet.name, toRetire->cuId, toPush.name);
             codQueue.pop();
         }
         // send to SU first -- build new packet / request of size runt_codelet_t for SU
@@ -254,8 +230,41 @@ CodeletInterface::accessTiming(PacketPtr pkt, int port_id)
         auto data = pkt->getPtr<uint8_t>();
         auto size = pkt->getSize();
         std::fill(data, data + size, 0); //send nullptr basically
-        sendResponse(pkt);
+        sendResponse(pkt, port_id);
     }
+}
+
+/*
+void
+CodeletInterface::CPUSidePort::sendPacket(PacketPtr pkt)
+{
+    panic_if(blockedPacket != nullptr, "Should never try to send if blocked!");
+
+    // If we can't send the packet across the port, store it for later.
+    DPRINTF(CodeletInterface, "Sending %s to CPU\n", pkt->print());
+    if (!sendTimingResp(pkt)) {
+        DPRINTF(CodeletInterface, "failed!\n");
+        blockedPacket = pkt;
+    }
+}
+
+void
+CodeletInterface::CPUSidePort::trySendRetry()
+{
+    if (needRetry && blockedPacket == nullptr) {
+        // Only send a retry if the port is now completely free
+        needRetry = false;
+        DPRINTF(CodeletInterface, "Sending retry req.\n");
+        sendRetryReq();
+    }
+}
+
+void
+CodeletInterface::CPUSidePort::recvFunctional(PacketPtr pkt)
+{
+    // Just forward to the interface
+    // handleFunctional should decide whether to forward or do a queue operation
+    return owner->handleFunctional(pkt, 0);
 }
 
 
@@ -299,6 +308,151 @@ CodeletInterface::CPUSidePort::recvRespRetry()
     // We may now be able to accept new packets
     trySendRetry();
 }
+*/
+
+// codelet interface should never snoop so we might be able to remove this
+/*
+bool
+CodeletInterface::CPUSidePort::recvTimingSnoopResp(PacketPtr pkt)
+{
+
+    assert(pkt->isResponse());
+
+    // Express snoop responses from requestor to responder, e.g., from L1 to L2
+    cache->recvTimingSnoopResp(pkt);
+    return true;
+}
+*/
+void
+CodeletInterface::CIResponsePort::setBlocked()
+{
+    assert(!blocked);
+    DPRINTF(CodeletInterface, "CPUSidePort is blocking new requests\n");
+    blocked = true;
+    // if we already scheduled a retry in this cycle, but it has not yet
+    // happened, cancel it
+    if (sendRetryEvent.scheduled()) {
+        owner.deschedule(sendRetryEvent);
+        DPRINTF(CodeletInterface, "CPUSidePort descheduled retry\n");
+        mustSendRetry = true;
+    }
+}
+
+void
+CodeletInterface::CIResponsePort::clearBlocked()
+{
+    assert(blocked);
+    DPRINTF(CodeletInterface, "CPUSidePort is accepting new requests\n");
+    blocked = false;
+    if (mustSendRetry) {
+        // @TODO: need to find a better time (next cycle?)
+        owner.schedule(sendRetryEvent, curTick() + 1);
+    }
+}
+
+void
+CodeletInterface::CIResponsePort::processSendRetry()
+{
+    DPRINTF(CodeletInterface, "Response Port is sending retry\n");
+
+    // reset the flag and call retry
+    mustSendRetry = false;
+    sendRetryReq();
+}
+
+bool
+CodeletInterface::CPUSidePort::tryTiming(PacketPtr pkt)
+{
+    /* // no snooping, should never be bypassed
+    if (cache->system->bypassCaches() || pkt->isExpressSnoop()) {
+        // always let express snoop packets through even if blocked
+        return true;
+    } else if (blocked || mustSendRetry) {
+        // either already committed to send a retry, or blocked
+        mustSendRetry = true;
+        return false;
+    }
+    */
+   // requests from the CPU only need to be blocked if it is trying to do codelet retirement 
+   // because codelet retirement involves operations on the queue instead of reading from activeCodelet
+   // all other requests can proceed
+   if (ci->queueRange.contains(pkt->getAddr()) && pkt->isWrite() && (blocked || mustSendRetry)) {
+        // either already committed to send a retry, or blocked
+        mustSendRetry = true;
+        return false;
+    }
+
+    mustSendRetry = false;
+    return true;
+}
+
+bool
+CodeletInterface::CPUSidePort::recvTimingReq(PacketPtr pkt)
+{
+    assert(pkt->isRequest());
+    /*
+    if (cache->system->bypassCaches()) {
+        // Just forward the packet if caches are disabled.
+        // @todo This should really enqueue the packet rather
+        [[maybe_unused]] bool success = cache->memSidePort.sendTimingReq(pkt);
+        assert(success);
+        return true;
+    } else if (tryTiming(pkt)) {
+        cache->recvTimingReq(pkt);
+        return true;
+    }
+    */
+    if (!ci->queueRange.contains(pkt->getAddr())) {
+        ci->memPort.schedTimingReq(pkt, curTick() + 1);
+        return(true);
+    }
+    if (tryTiming(pkt)) {
+        //ci->recvTimingReq(pkt);
+        ci->handleRequest(pkt, 0);
+        return true;
+    }
+    return false;
+}
+
+/*
+Tick
+CodeletInterface::CPUSidePort::recvAtomic(PacketPtr pkt)
+{
+    return ci->recvAtomic(pkt);
+}
+*/
+
+void
+CodeletInterface::CPUSidePort::recvFunctional(PacketPtr pkt)
+{
+    // functional request
+    // shouldn't be called since we always run in timing mode
+    // but keep in mind for errors
+    DPRINTF(CodeletInterface, "Received functional request %s from CPU\n", pkt->print());
+    ci->handleFunctional(pkt, 0);
+}
+
+CodeletInterface::CPUSidePort::CPUSidePort(const std::string &_name, CodeletInterface *_ci,
+                         const std::string &_label)
+    : CIResponsePort(_name, _ci, _label), ci(_ci)
+{ }
+/*
+CodeletInterface::CPUSidePort::CPUSidePort(const std::string &_name,
+                                    CodeletInterface *_ci,
+                                    const std::string &_label)
+    : CIResponsePort(_name, _ci, _label)
+    { }
+*/
+
+CodeletInterface::CIResponsePort::CIResponsePort(const std::string &_name,
+                                          CodeletInterface *_ci,
+                                          const std::string &_label)
+    : QueuedResponsePort(_name, _ci, queue),
+      queue(*_ci, *this, true, _label),
+      blocked(false), mustSendRetry(false),
+      sendRetryEvent([this]{ processSendRetry(); }, _name)
+{
+}
 
 // -----------------------------------------<CodSideReqPort Functions -----------------------------
 void
@@ -337,6 +491,7 @@ CodeletInterface::CodSideReqPort::recvReqRetry()
 // ------------------------------------<\end CodSideReqPort Functions --------------------------
 
 // -----------------------------------------<MemSidePort Functions -----------------------------
+/*
 void
 CodeletInterface::MemSidePort::sendPacket(PacketPtr pkt)
 {
@@ -370,6 +525,76 @@ CodeletInterface::MemSidePort::recvReqRetry()
     // Try to resend it. It's possible that it fails again.
     sendPacket(pkt);
 }
+*/
+
+bool
+CodeletInterface::MemSidePort::recvTimingResp(PacketPtr pkt)
+{
+    ci->recvMemTimingResp(pkt);
+    return true;
+}
+
+void
+CodeletInterface::recvMemTimingResp(PacketPtr pkt)
+{
+    DPRINTF(CodeletInterface, "Got response for addr %#x\n", pkt->getAddr());
+    // just forward the response back to CPU     
+    // i think now that its queued port we don't need original packet
+    /*
+    if (originalPacket != nullptr) {
+        DPRINTF(CodeletInterface, "Response from SU; getting original packet to reply to CPU\n");
+        // We had to upgrade a previous packet. We can functionally deal with
+        // the cache access now. It better be a hit.
+        originalPacket->makeResponse();
+        delete pkt; // We may need to delay this, I'm not sure.
+        pkt = originalPacket;
+        originalPacket = nullptr;
+    } // else, pkt contains the data it needs
+     */
+    //sendResponse(pkt);
+    // we know that this response came from memory which means it can only be
+    // a response that is heading towards the CPU so send it directly
+    //cpuPort.sendTimingResp(pkt);
+    cpuPort.schedTimingResp(pkt, curTick() + 1);
+
+}
+
+/*
+void
+CodeletInterface::CIReqPacketQueue::sendDeferredPacket()
+{
+    // sanity check
+    assert(!waitingOnRetry);
+
+    // there should never be any deferred request packets in the
+    // queue, instead we resly on the cache to provide the packets
+    // from the MSHR queue or write queue ????
+    assert(deferredPacketReadyTime() == MaxTick);
+
+    // check for request packets 
+    PacketPtr toSend = ci->requestQueue.front();
+    ci->requestQueue.pop();
+    waitingOnRetry = entry->sendPacket(cache);
+
+    // if we succeeded and are not waiting for a retry, schedule the
+    // next send considering when the next queue is ready, note that
+    // snoop responses have their own packet queue and thus schedule
+    // their own events
+    if (!waitingOnRetry) {
+        schedSendEvent(ci.nextQueueReadyTime());
+    }
+}
+*/
+
+CodeletInterface::MemSidePort::MemSidePort(const std::string &_name,
+                                    CodeletInterface *_ci,
+                                    const std::string &_label)
+    : CIRequestPort(_name, _ci, _reqQueue, _snoopRespQueue),
+      _reqQueue(*_ci, *this, _snoopRespQueue, _label),
+      _snoopRespQueue(*_ci, *this, true, _label), ci(_ci)
+{
+}
+
 // ------------------------------------<\end MemSidePort Functions -----------------------------
 
 
@@ -386,10 +611,10 @@ CodeletInterface::handleRequest(PacketPtr pkt, int port_id)
     DPRINTF(CodeletInterface, "Got request %s\n", pkt->print());
 
     // This interface is now blocked waiting for the response to this packet.
-    blocked = true;
+    //blocked = true;
 
     // Store the port for when we get the response
-    assert(waitingPortId == -1);
+    //assert(waitingPortId == -1);
     waitingPortId = port_id; // this is valid if the request was from CPU
     // invalid if from codbus (SU)
 
@@ -404,7 +629,7 @@ CodeletInterface::handleRequest(PacketPtr pkt, int port_id)
     } else {
         // for now, ignore SU address space -- if not local queue access, forward
         DPRINTF(CodeletInterface, "forwarding packet\n");
-        memPort.sendPacket(pkt);
+        memPort.schedTimingReq(pkt, curTick() + 1);
     }
     return true;
 }
@@ -412,8 +637,8 @@ CodeletInterface::handleRequest(PacketPtr pkt, int port_id)
 bool
 CodeletInterface::handleResponse(PacketPtr pkt)
 {
-    assert(blocked);
-    DPRINTF(CodeletInterface, "Got response for addr %#x\n", pkt->getAddr());
+    //assert(blocked);
+    DPRINTF(CodeletInterface, "Got non-mem response for addr %#x\n", pkt->getAddr());
     // just forward the response back to CPU/SU depending on where the 
     // request originated (based on waitingPortId)
     // If we had to upgrade the request packet to a full codelet, now we
@@ -426,20 +651,24 @@ CodeletInterface::handleResponse(PacketPtr pkt)
         delete pkt; // We may need to delay this, I'm not sure.
         pkt = originalPacket;
         originalPacket = nullptr;
+        sendResponse(pkt, 0); // port ID of 0 means CPU port
+        return(true);
     } // else, pkt contains the data it needs
-    sendResponse(pkt);
+    // this function has be bypassed now for memory responses, so this should only actually be for
+    // the Codelet Bus, meaning we can safely plug in InvalidPortId as the port ID
+    // (the cpu port manually assigns port id as 0 instead of invalid)
 
-    return true;
+    return(false);
 }
 
 
 void
-CodeletInterface::sendResponse(PacketPtr pkt)
+CodeletInterface::sendResponse(PacketPtr pkt, int port_id)
 {
-    assert(blocked);
+    //assert(blocked);
     DPRINTF(CodeletInterface, "Sending resp for addr %#x\n", pkt->getAddr());
 
-    int port = waitingPortId; // valid if request was from CPU
+    int port = port_id; // valid if request was from CPU
     // InvalidPortID if request was from SU
 
     // The packet is now done. We're about to put it in the port, no need for
@@ -447,23 +676,24 @@ CodeletInterface::sendResponse(PacketPtr pkt)
     // We need to free the resource before sending the packet in case the CPU
     // tries to send another request immediately (e.g., in the same callchain).
     blocked = false;
-    waitingPortId = -1;
+    //waitingPortId = -1;
 
     // check if responding to CPU or back to SU
     if (port == InvalidPortID) { // response to SU
         codRespPort.sendPacket(pkt);
+        // this also needs to trySendRetry the codRespPort
+        codRespPort.trySendRetry();
     } else {
         // Respond to CPU port that sent the request
-        cpuPorts[port].sendPacket(pkt);
+        //cpuPort.sendTimingResp(pkt);
+        cpuPort.schedTimingResp(pkt, curTick() + 1);
     }
 
-    // For each of the cpu ports, if it needs to send a retry, it should do it
-    // now since this memory object may be unblocked now.
-    // this also needs to trySendRetry the codRespPort
-    codRespPort.trySendRetry();
+    /*
     for (auto& port : cpuPorts) {
         port.trySendRetry();
     }
+    */
 }
 // -----------------------------------<\end Codelet Interface Funcs>--------------------------
 
@@ -496,7 +726,8 @@ void
 CodeletInterface::CodSideRespPort::recvFunctional(PacketPtr pkt)
 {
     // Just forward to the interface
-    // handleFunctional should decide whether to forward or do a queue operation
+    // handleFunctional can't actually correctly handle a Codelet request right now
+    // but the SU shouldn't ever send a functional request, so let's ignore that
     return owner->handleFunctional(pkt, InvalidPortID);
 }
 
@@ -518,6 +749,13 @@ CodeletInterface::CodSideRespPort::recvTimingReq(PacketPtr pkt)
         needRetry = true;
         return false;
     } else {
+        /*
+        if (owner->queueRange.contains(pkt->getAddr()) && pkt->isWrite()) {
+            // if pushing new codelet to queue, need to block incoming requests from CPU
+            // so that there is no queue manipulation conflict / race conditions
+            owner->cpuPort.setBlocked();
+        }
+        */
         DPRINTF(CodeletInterfaceCod, "Request succeeded\n");
         return true;
     }
@@ -546,7 +784,7 @@ void
 CodeletInterface::MemSidePort::recvRangeChange()
 {
     DPRINTF(CodeletInterface, "CodeletInterface receiving range change from MemSidePort\n");
-    owner->sendRangeChange();
+    ci->sendRangeChange();
 }
 
 
@@ -554,9 +792,7 @@ void
 CodeletInterface::sendRangeChange() const
 {
     DPRINTF(CodeletInterface, "CodeletInterface sending range change to CPU ports\n");
-    for (auto& port : cpuPorts) {
-        port.sendRangeChange();
-    }
+    cpuPort.sendRangeChange();
 }
 
 AddrRangeList
@@ -567,11 +803,11 @@ CodeletInterface::CPUSidePort::getAddrRanges() const
     // i.e. local queue space, SU space, mem space
     AddrRangeList ranges;
     // include SU space accessible from the interface
-    ranges.merge(owner->getCodAddrRanges());
+    ranges.merge(ci->getCodAddrRanges());
     // include local interface queue space
-    ranges.merge(owner->getLocAddrRanges());
+    ranges.merge(ci->getLocAddrRanges());
     // include mem space
-    ranges.merge(owner->getMemAddrRanges());
+    ranges.merge(ci->getMemAddrRanges());
     return(ranges);
 }
 
@@ -614,6 +850,7 @@ CodeletInterface::getLocAddrRanges() const
 {
     // returns AddrRange representing local codelet queue
     AddrRangeList ranges;
+    DPRINTF(CodeletInterfaceQueue, "CodeletInterface has range 0x%lx - 0x%lx\n", queueRange.start(), queueRange.end());
     ranges.push_back(queueRange);
     return(ranges);
 }

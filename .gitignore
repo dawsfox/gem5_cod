@@ -32,7 +32,7 @@ configs/example/memcheck.cfg
 configs/dram/lowp_sweep.cfg
 .pyenv
 .vscode
-tests/test-progs/codelet/bin/*
+tests/test-progs/codelet/*/bin/*
 src/codelet/SCMUlate/src/*/*.o
 src/codelet/SCMUlate/src/*/*.do
 src/codelet/SCMUlate/src/*/*.txt

@@ -56,24 +56,36 @@ SU::getCodelets()
         size_t codelet_count = prog_data->d_size / sizeof(user_codelet_t);
         DPRINTF(SULoader, "Codelet list located at %p with %u codelets\n", codelet_list, codelet_count);
         DPRINTF(SULoader, "size of user codelet: %u\n", sizeof(user_codelet_t));
-        for (int i=0; i<codelet_count; i++) {
-            //runt_codelet_t *localCod = (runt_codelet_t *) malloc(sizeof(runt_codelet_t));
-            //memcpy(localCod, &(codelet_program[i]), sizeof(codelet_t));
-            //strcpy(localCod->name, codelet_list[i].name);
-            //localCod->fire = codelet_list[i].fire;
+        // -2 because the last two codelets are unique;
+        // the first one is a special init codelet with a unique name that always stalls completely to perform initializations
+        // the second one is a dummy codelet that holds the base pointer of SCM memory 
+        for (int i=0; i<codelet_count-2; i++) {
             DPRINTF(SULoader, "codelet %d is at address %p in elf\n", i, &(codelet_list[i]));
-            DPRINTF(SULoader, "codelet is: %p - %s\n", (void *)codelet_list[i].fire, codelet_list[i].name);
-            //DPRINTF(SULoader, "real codelet is: %p %x %x %x %x\n", (void *)localCod->fire, localCod->dest, localCod->src1, localCod->src2, localCod->id);
-            //codQueue.push(*localCod);
-            //codSpace[i] = *localCod;
-            //free(localCod);
-            char codName[32];
+            DPRINTF(SULoader, "codelet is: %x - %p - %s\n", codelet_list[i].io, (void *)codelet_list[i].fire, codelet_list[i].name);
+            char codName[30];
             strcpy(codName, codelet_list[i].name);
             std::string codStringName(codName);
             // copying name from elf and then mapping it to the fire function in the SU::codMapping
-            codMapping[codStringName] = (fire_t) codelet_list[i].fire;
-            DPRINTF(SULoader, "loaded user codelet mapping: %s - %p\n", codStringName.data(), (void *)codMapping[codStringName]);
+            //codMapping[codStringName] = (fire_t) codelet_list[i].fire;
+            user_codelet_t tmp;
+            tmp.io = codelet_list[i].io;
+            strcpy(tmp.name, codelet_list[i].name);
+            tmp.fire = codelet_list[i].fire;
+            codMapping[codStringName] = tmp;
+            DPRINTF(SULoader, "loaded user codelet mapping: %s - %p, %x\n", codStringName.data(), (void *)codMapping[codStringName].fire, codMapping[codStringName].io);
         }
+            char codName[30];
+            strcpy(codName, codelet_list[codelet_count-2].name);
+            std::string codStringName(codName);
+            // Loading special initCod
+            user_codelet_t tmp;
+            tmp.io = codelet_list[codelet_count-2].io;
+            strcpy(tmp.name, codelet_list[codelet_count-2].name);
+            tmp.fire = codelet_list[codelet_count-2].fire;
+            codMapping[codStringName] = tmp;
+            DPRINTF(SULoader, "loaded user codelet mapping: %s - %p, %x\n", codStringName.data(), (void *)codMapping[codStringName].fire, codMapping[codStringName].io);
+            scmBasePtr = (uint64_t) codelet_list[codelet_count-1].fire;
+            DPRINTF(SULoader, "Loaded SCM base pointer: 0x%lx\n", scmBasePtr);
         return(codelet_count);
         /*
         //for test printing
@@ -90,15 +102,31 @@ SU::getCodelets()
 fire_t
 SU::getCodeletFire(std::string codName)
 {
-    fire_t tmp = codMapping[codName];
+    fire_t tmp = codMapping[codName].fire;
     if (!tmp) {
       for(auto it = codMapping.cbegin(); it != codMapping.cend(); ++it)
       {
-        SCMULATE_INFOMSG(3, "Codelet %s at %p", it->first.c_str(), (void *) it->second);
+        SCMULATE_INFOMSG(3, "Codelet %s at %p", it->first.c_str(), (void *) it->second.fire);
       }
         SCMULATE_ERROR(0, "Fire function requested from SU for codelet %s not found", codName.c_str());
     }
     return(tmp);
+}
+
+uint16_t
+SU::getCodeletIo(std::string codName)
+{
+    // below causes problems because I/O can be 0 and valid
+    //uint16_t tmp = codMapping[codName].io;
+    auto it = codMapping.find(codName);
+    if (it == codMapping.end()) {
+      for(auto it = codMapping.cbegin(); it != codMapping.cend(); ++it)
+      {
+        SCMULATE_INFOMSG(3, "Codelet %s with I/O %x", it->first.c_str(), it->second.io);
+      }
+        SCMULATE_ERROR(0, "I/O requested from SU for codelet %s not found", codName.c_str());
+    }
+    return(codMapping[codName].io);
 }
 
 unsigned char *
@@ -243,8 +271,10 @@ SU::accessFunctional(PacketPtr pkt)
     retire_data_t * retireData = pkt->getPtr<retire_data_t>();
     // modify state of the correct instruction
     auto cu_map_ptr = executingInsts[retireData->cuId];
-    panic_if(cu_map_ptr->empty(), "Attempting to retire codelet but CU %d list is empty", retireData->cuId);
-    scm::instruction_state_pair * inst_pair = (*cu_map_ptr)[retireData->toRet.fire];
+    DPRINTF(SU, "Retiring Codelet %s with unique id 0x%lx\n", retireData->toRet.name, retireData->toRet.unid);
+    panic_if(cu_map_ptr->empty(), "Attempting to retire codelet %s but CU %d list is empty", retireData->toRet.name, retireData->cuId);
+    //scm::instruction_state_pair * inst_pair = (*cu_map_ptr)[retireData->toRet.fire];
+    scm::instruction_state_pair * inst_pair = (*cu_map_ptr)[retireData->toRet.unid];
     panic_if(!inst_pair, "Instruction pair fetched from executingInsts is nullptr");
     inst_pair->second = scm::EXECUTION_DONE;
     scm::decoded_instruction_t * inst = inst_pair->first;
@@ -288,7 +318,7 @@ SU::accessFunctional(PacketPtr pkt)
     runt_codelet_t retiredCod = retireData->toRet;
     DPRINTF(SU, "SU received retirement for codelet with %s %p %p %p\n", retiredCod.name, retiredCod.dest, retiredCod.src1, retiredCod.src2);
     DPRINTF(SU, "decoded instruction for retirement: %s\n", codName.data()); //%p %p %p\n", codName.data(), dest, src1, src2);
-    cu_map_ptr->erase(retireData->toRet.fire); //remove from executing insts list
+    cu_map_ptr->erase(retireData->toRet.unid); //remove from executing insts list
     // assuming this is correct and this codelet matches with this instruction for now....
     // mark instruction as finished executing -- codelet is now properly retired
     //inst_pair->second = scm::instruction_state::EXECUTION_DONE;
@@ -472,7 +502,21 @@ SU::sendRequest(runt_codelet_t *toPush, Addr dest)
     if (reqBlocked) { //can't send if already being used
         return false;
     }
-    DPRINTF(SU, "Pushing codelet to interface with addr %#x\n", dest);
+    /*
+        Request::Flags reqFlags2(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
+        const RequestPtr src_req = std::shared_ptr<Request>(new Request(Addr(0x90bb9010), sizeof(uint64_t), reqFlags2, reqId));
+        PacketPtr src_pkt = Packet::createRead(src_req);
+        src_pkt->dataStatic<uint64_t>(new uint64_t);
+        DPRINTF(SUSCM, "Sending out functional read packet %s\n", src_pkt->print());
+        memPort.sendFunctional(src_pkt);
+        DPRINTF(SUSCM, "Read packet returned value 0x%lx\n", *src_pkt->getPtr<uint64_t>());
+        delete src_pkt->getPtr<uint64_t>();
+    */
+    // request is not blocked, so now lets give the codelet a unique id and increment it
+    toPush->unid = codUniqueId;
+    codUniqueId++; // increment unique codelet id for next send
+
+    DPRINTF(SU, "Pushing codelet %s with unique id 0x%lx to interface with addr %#x\n", toPush->name, toPush->unid, dest);
     reqBlocked = true;
     // addr should be one that is contained within the CodeletInterface
     // between 0x90000000 and 0x9000000f. Should be a write, also...
@@ -509,45 +553,55 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
         scm::operand_t & op = inst->getOp(op_num);
         if (scm::instructions::isRegister(opStr)) {
             // REGISTER REGISTER ADD CASE
-            op.value.reg.reg_ptr = regFile->getRegisterByName(op.value.reg.reg_size, op.value.reg.reg_number);
+            //op.value.reg.reg_ptr = regFile->getRegisterByName(op.value.reg.reg_size, op.value.reg.reg_number);
             if (op_num == 1) {
                 dest = (void *) op.value.reg.reg_ptr;
                 // for some reason, gem5 crashes trying to print the reg_ptr as %p but not dest......
-                //DPRINTF(SUSCM, "dest set to %p based on %lx\n", dest, (long unsigned)op.value.reg.reg_ptr);
             } else if (op_num == 2) {
                 src1 = (void *) op.value.reg.reg_ptr;
-                //DPRINTF(SUSCM, "src1 set to %p based on %lx\n", src1, (long unsigned)op.value.reg.reg_ptr);
             } else if (op_num == 3) {
                 src2 = (void *) op.value.reg.reg_ptr;
-                //DPRINTF(SUSCM, "src2 set to %p based on %lx\n", src2, (long unsigned)op.value.reg.reg_ptr);
             }
-        } 
+        } else if (op.type == scm::operand_t::IMMEDIATE_VAL) {
+            if (op_num == 2) {
+                DPRINTF(SUSCM, "Op 2 is immediate with value 0x%lx\n", op.value.immediate);
+                src1 = (void *) op.value.immediate;
+            } else if (op_num == 3) {
+                DPRINTF(SUSCM, "Op 3 is immediate with value 0x%lx\n", op.value.immediate);
+                src2 = (void *) op.value.immediate;
+            }
+        }
     }
+    /*
     if (!dest || !src1 || !src2) {
         DPRINTF(SUSCM, "operands missing for codelet %s\n", codName);
         return(false);
     }
-    runt_codelet_t tmp; // = {(fire_t)scmCod->getFireFunc(), dest, src1, src2, nullptr)};
+    */
+    runt_codelet_t tmp;
     tmp.fire = (fire_t) scmCod->getFireFunc();
     tmp.dest = dest;
     tmp.src1 = src1;
     tmp.src2 = src2;
     strcpy(tmp.name, codName.data());
+    // we do not set the codelet unique id yet because we don't want to cycle through them
+    // before we actually schedule them, so we will do it in sendRequest
     // TODO: add a way to make sure this gets freed at some point
     runt_codelet_t * toPush = (runt_codelet_t *) malloc(sizeof(runt_codelet_t));
     memcpy(toPush, &tmp, sizeof(runt_codelet_t));
-    DPRINTF(SUSCM, "Runtime codelet built: %p\t%p\t%p\t%p\t%s\n", (void *)tmp.fire, tmp.dest, tmp.src1, tmp.src2, tmp.name);
-    DPRINTF(SUSCM, "toPush for comparison: %p\t%p\t%p\t%p\t%s\n", (void *)toPush->fire, toPush->dest, toPush->src1, toPush->src2, toPush->name);
+    //uint64_t dest_val = *((uint64_t *)tmp.dest);
+    //DPRINTF(SUSCM, "dest has value 0x%lx\n", dest_val);
     // send to CodeletInterface
     // at some point, we should avoid doing this work every single time unless SU isn't blocked
-    Addr interface_addr(0x90000000 + (cuToSchedule * 0x44));
+    //Addr interface_addr(0x90000000 + (cuToSchedule * 0x4c));
+    Addr interface_addr(0x90000000 + (cuToSchedule * (sizeof(runt_codelet_t)+sizeof(unsigned))));
     if(sendRequest(toPush, interface_addr)) {
+        DPRINTF(SUSCM, "Runtime codelet sent: %p\t%p\t%p\t%p\t%s\n", (void *)tmp.fire, tmp.dest, tmp.src1, tmp.src2, tmp.name);
         // add instruction that was sent to the list of instructions in execution
-        //executingInsts.push(inst_pair); // for queue verions of executingInsts
-        //executingInsts[tmp.fire].push_back(inst_pair);
         auto cu_map_ptr = executingInsts[cuToSchedule];
-        (*cu_map_ptr)[tmp.fire] = inst_pair;
-        DPRINTF(SULoader, "Adding inst_pair %p mapped to %lx for CU %d\n", (*cu_map_ptr)[tmp.fire], (unsigned long)tmp.fire, cuToSchedule);
+        //(*cu_map_ptr)[tmp.fire] = inst_pair;
+        (*cu_map_ptr)[toPush->unid] = inst_pair;
+        DPRINTF(SULoader, "Adding inst_pair %p mapped to %lx for CU %d\n", (*cu_map_ptr)[tmp.unid], (unsigned long)tmp.unid, cuToSchedule);
         cuToSchedule = (cuToSchedule + 1) % numCus; // enforces round robin
         return(true);
     } else {
@@ -567,7 +621,7 @@ SU::commitFromFD()
     // send to CodeletInterface
     // need to manage this better, with the SU having a count of CUs 
     // and managing different instruction lists for them
-    Addr interface_addr(0x90000000 + (numCus-1) * 0x44);
+    Addr interface_addr(0x90000000 + (numCus-1) * (sizeof(runt_codelet_t)+sizeof(unsigned)));
     if(sendRequest(toPush, interface_addr)) {
         if (numCus > 1) {
             // numCus acts here like a number of active CUs
@@ -597,8 +651,10 @@ SU::fetchOperandsFromMem(scm::instruction_state_pair *inst_pair)
     PacketPtr src1_pkt = Packet::createRead(src1_req);
     src1_pkt->dataStatic<uint64_t>(new uint64_t);
     DPRINTF(SUMem, "Fetching data from addr %lx for SCM instruction\n", src1_addr);
-    memPort.sendTimingReq(src1_pkt);
+    //memPort.sendTimingReq(src1_pkt);
+    memPort.schedTimingReq(src1_pkt, curTick() + 1);
     // not sure if we will have to check if the timing request succeeds...
+    // maybe will have to keep an eye on consistency now that it is queued
     // ---------------- Packet building for src2 --------------------------------------------------------------    
     // src2 is immediate so we don't have to fetch it
     if (inst->getOp3().type != scm::operand_t::IMMEDIATE_VAL) {
@@ -608,7 +664,8 @@ SU::fetchOperandsFromMem(scm::instruction_state_pair *inst_pair)
         PacketPtr src2_pkt = Packet::createRead(src2_req);
         src2_pkt->dataStatic<uint64_t>(new uint64_t);
         DPRINTF(SUMem, "Fetching data from addr %lx for SCM instruction\n", src2_addr);
-        memPort.sendTimingReq(src2_pkt);
+        //memPort.sendTimingReq(src2_pkt);
+        memPort.schedTimingReq(src2_pkt, curTick() + 1);
     }
     return(true);
 }
@@ -629,9 +686,107 @@ SU::writebackOpToMem(uint64_t * result)
         dest_pkt->dataStatic<uint64_t>(result);
         // TODO: assess if there is an issue here with passing reference of parameter; probably this function should take a pointer
         DPRINTF(SUMem, "Writing back data %lx to addr %lx for SCM instruction\n", *result, dest_addr);
-        memPort.sendTimingReq(dest_pkt);
+        //memPort.sendTimingReq(dest_pkt);
+        memPort.schedTimingReq(dest_pkt, curTick() + 1);
         return(true);
     }
+}
+
+// called from fetch decode module; uses functional accesses to hide the register copy,
+// only for an early implementation
+void
+SU::initRegMemCopy(scm::decoded_reg_t * dest, scm::decoded_reg_t * src)
+{
+    copyDest = dest;
+    copySrc = src;
+    regMemCopy = true;
+    copySize = dest->reg_size_bytes;
+    DPRINTF(SUSCM, "Initiating functional register copy (from %s to %s with size %d bytes)\n", src->reg_name, dest->reg_name, copySize);
+    // send out all the read packets required based on the register size
+    for (int i=0; i<copySize; i+=8) {
+        uint64_t src_addr = (uint64_t) (src->reg_ptr + i);
+        Request::Flags reqFlags(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
+        const RequestPtr src_req = std::shared_ptr<Request>(new Request(Addr(src_addr), sizeof(uint64_t), reqFlags, reqId));
+        PacketPtr src_pkt = Packet::createRead(src_req);
+        src_pkt->dataStatic<uint64_t>(new uint64_t);
+        DPRINTF(SUSCM, "Sending out functional read packet %s\n", src_pkt->print());
+        memPort.sendFunctional(src_pkt);
+        // functional is instant so we should be able to immediately copy and send the dest packet
+        uint64_t * ele = src_pkt->getPtr<uint64_t>();
+        DPRINTF(SUSCM, "Data read functionally is 0x%lx; data is located at %p in gem5 space\n", *ele, ele);
+        uint64_t dest_addr = (uint64_t) (dest->reg_ptr + i);
+        Request::Flags reqFlags2(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
+        const RequestPtr dest_req = std::shared_ptr<Request>(new Request(Addr(dest_addr), sizeof(uint64_t), reqFlags2, reqId));
+        PacketPtr dest_pkt = Packet::createWrite(dest_req);
+        //dest_pkt->dataStatic<uint64_t>(ele);
+        dest_pkt->dataStatic<uint64_t>(new uint64_t);
+        memcpy(dest_pkt->getPtr<uint64_t>(), ele, sizeof(uint64_t));
+        delete src_pkt->getPtr<uint64_t>();
+        DPRINTF(SUSCM, "Sending out functional write packet %s with data 0x%lx\n", dest_pkt->print(), *dest_pkt->getPtr<uint64_t>());
+        memPort.sendFunctional(dest_pkt);
+        delete dest_pkt->getPtr<uint64_t>();
+        /* functional read properly returns; so the problem is not here
+        uint64_t src2_addr = (uint64_t) (src->reg_ptr + i);
+        Request::Flags reqFlags3(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
+        const RequestPtr src2_req = std::shared_ptr<Request>(new Request(Addr(src_addr), sizeof(uint64_t), reqFlags3, reqId));
+        PacketPtr src2_pkt = Packet::createRead(src2_req);
+        src2_pkt->dataStatic<uint64_t>(new uint64_t);
+        DPRINTF(SUSCM, "Sending out functional read packet %s\n", src2_pkt->print());
+        memPort.sendFunctional(src2_pkt);
+        DPRINTF(SUSCM, "Read packet returned value 0x%lx\n", *src2_pkt->getPtr<uint64_t>());
+        delete src2_pkt->getPtr<uint64_t>();
+         */
+    }
+    DPRINTF(SUSCM, "Functional register copy done\n");
+}
+
+ //code calling this function should be sure to free the pointer returned after use
+void *
+SU::fetchOp(scm::decoded_reg_t * reg)
+{
+    unsigned reg_size = reg->reg_size_bytes;
+    //void * dest = (void *) new unsigned char[reg_size];
+    unsigned char * dest = new unsigned char[reg_size];
+    for (int i=0; i<reg_size; i+=8) {
+        uint64_t src_addr = (uint64_t) (reg->reg_ptr + i);
+        Request::Flags reqFlags(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
+        const RequestPtr src_req = std::shared_ptr<Request>(new Request(Addr(src_addr), sizeof(uint64_t), reqFlags, reqId));
+        PacketPtr src_pkt = Packet::createRead(src_req);
+        src_pkt->dataStatic<uint64_t>(new uint64_t);
+        DPRINTF(SUSCM, "Sending functional read %s for reg. %s\n", src_pkt->print(), reg->reg_name);
+        memPort.sendFunctional(src_pkt);
+        DPRINTF(SUSCM, "Functional read has unsigned data 0x%lx\n", *src_pkt->getPtr<uint64_t>());
+        memcpy(dest+i, src_pkt->getPtr<uint64_t>(), 8);
+        delete src_pkt->getPtr<uint64_t>(); // free the pkt data we had to allocate
+    }
+    return((void *)dest);
+}
+
+void
+SU::writeOp(scm::decoded_reg_t * reg, void * src)
+{
+    unsigned reg_size = reg->reg_size_bytes;
+    for (int i=0; i<reg_size; i+=8) {
+        uint64_t dest_addr = (uint64_t) (reg->reg_ptr + i);
+        Request::Flags reqFlags(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
+        const RequestPtr dest_req = std::shared_ptr<Request>(new Request(Addr(dest_addr), sizeof(uint64_t), reqFlags, reqId));
+        PacketPtr dest_pkt = Packet::createWrite(dest_req);
+        dest_pkt->dataStatic<uint64_t>(new uint64_t);
+        DPRINTF(SUSCM, "Sending functional write %s for reg. %s\n", dest_pkt->print(), reg->reg_name);
+        memcpy(dest_pkt->getPtr<uint64_t>(), src+i, sizeof(uint64_t));
+        DPRINTF(SUSCM, "Functional write has unsigned data 0x%lx\n", *(dest_pkt->getPtr<uint64_t>()));
+        memPort.sendFunctional(dest_pkt);
+        delete dest_pkt->getPtr<uint64_t>();
+    }
+        uint64_t dest_addr = (uint64_t) (reg->reg_ptr);
+        Request::Flags reqFlags(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
+        const RequestPtr dest_req = std::shared_ptr<Request>(new Request(Addr(dest_addr), sizeof(uint64_t), reqFlags, reqId));
+        PacketPtr dest_pkt = Packet::createRead(dest_req);
+        dest_pkt->dataStatic<uint64_t>(new uint64_t);
+        DPRINTF(SUSCM, "Sending read check %s for reg. %s\n", dest_pkt->print(), reg->reg_name);
+        memPort.sendFunctional(dest_pkt);
+        DPRINTF(SUSCM, "read check has unsigned data 0x%lx\n", *(dest_pkt->getPtr<uint64_t>()));
+        delete dest_pkt->getPtr<uint64_t>();
 }
 
 // this is only called when the SU receives a response from the memPort
@@ -797,6 +952,7 @@ SU::SUStats::SUStats(statistics::Group *parent)
 void
 SU::init()
 {
+    DPRINTF(SU, "Size of runtime codelet in gem5: 0x%lx\n", sizeof(runt_codelet_t));
     sendRangeChange();    
     // set reg space to correct address in runtime address spaced based on ELF section
     //regSpace = readRegSpacePtr();
@@ -808,7 +964,7 @@ SU::init()
     //regFile = new scm::reg_file_module((scm::register_file_t *)regSpace);
     regFile = new scm::reg_file_module((scm::register_file_t *)0x90001000);
     instructionMem = new scm::inst_mem_module(scmFileName, regFile, this);
-    fetchDecode = new scm::fetch_decode_module(instructionMem, controlStore, &aliveSig, ilpMode, this);
+    fetchDecode = new scm::fetch_decode_module(instructionMem, controlStore, &aliveSig, ilpMode, this, (uint64_t)(0x90001000+12288000));
     /* TODO: change SU fields that are scm modules to be pointers to the SCM modules
      * We have to do this because the register file needs to be instantiated when the
      * SU already has gotten the root point of the register file from the ELF file. This
@@ -820,6 +976,18 @@ void
 SU::startup()
 {
     // here: schedule first tick
+    // adding some page table checking to debug hidden register file
+    /* doesn't seem to be a mapping problem... don't see anything else mapped in the region
+    ThreadContext *tmp_context = system->threads[0];
+    gem5::Process * tmp_proc = tmp_context->getProcessPtr();
+    auto proc_map = new std::vector<std::pair<Addr, Addr>>;
+    tmp_proc->pTable->getMappings(proc_map); 
+    DPRINTF(SUSCM, "Printing process memory mappings\n");
+    for (auto it=proc_map->cbegin(); it!=proc_map->cend(); it++) {
+        DPRINTF(SUSCM, "0x%lx : 0x%lx\n", it->first, it->second);
+    }
+    delete proc_map;
+    */
     DPRINTF(SU, "scheduling first tick\n");
     schedule(tickEvent, clockEdge(Cycles(1)));
 }
@@ -832,23 +1000,6 @@ SU::tick()
     // in the codelet space that should go to the queue
     /* no local codelet space setup yet so lets ignore first part */
     // then should push out codelets from the queue -- one per tick?
-    /*
-    if (!codQueue.empty() && !reqBlocked) {
-        Addr interface_addr(0x90000000);
-        codelet_t * localCod = (codelet_t *) malloc(sizeof(codelet_t));
-        *localCod = codQueue.front();
-        codQueue.pop();
-        sendRequest(localCod, interface_addr);
-    }
-    else if (!reqBlocked) { // if queue empty but requests aren't blocked
-        // later, this should be wrapped in a private function
-        // for now we are saying if no codelets left, end
-        // later it will be based on deps / program flow
-        Addr interface_addr(0x90000000);
-        sendRequest(&finalCod, interface_addr);
-        aliveSig = false;
-    }
-    */
     // only tick the FD when it hasn't reached COMMIT yet
     if (aliveSig) {
         fetchDecode->tickBehavior();
@@ -866,8 +1017,9 @@ SU::tick()
 
 SU::SU(const SUParams &params) :
     ClockedObject(params),
-    //ilpMode(scm::SEQUENTIAL),
-    ilpMode(scm::OOO),
+    ilpMode(scm::SUPERSCALAR),
+    //ilpMode(scm::OOO),
+    //ilpMode(scm::OOO), // OOO ILP now takes root for hidden register file
     scmFileName(params.scm_file_name.data()),
     tickEvent([this]{ tick(); }, "SU tick",
                 false, Event::CPU_Tick_Pri),
@@ -889,9 +1041,8 @@ SU::SU(const SUParams &params) :
 {
     for (int i=0; i<numCus; i++) {
         // prepare correct number of fire : inst state pair maps
-        //auto cu_inst_list = new std::map<fire_t, scm::instruction_state_pair *>;
-        //executingInsts.push_back(cu_inst_list);
-        executingInsts.push_back(new std::map<fire_t, scm::instruction_state_pair *>);
+        //executingInsts.push_back(new std::map<fire_t, scm::instruction_state_pair *>);
+        executingInsts.push_back(new std::map<uint64_t, scm::instruction_state_pair *>);
     }
     finalCod.fire = (fire_t)0xffffffffffffffff;
     finalCod.dest = nullptr;
