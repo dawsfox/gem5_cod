@@ -387,6 +387,8 @@ class SU : public ClockedObject
 
     unsigned numCus; // number of CUs this SU is managing
 
+    unsigned numMcus; // number of MCU threads this SU is managing
+
     unsigned cuToSchedule = 0; // used for round robin scheduling to CUs
 
     std::map<std::string, user_codelet_t> codMapping;

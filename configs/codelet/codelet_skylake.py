@@ -55,6 +55,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('config', choices = valid_configs.keys())
 parser.add_argument('num_cores', type = int, help = "Number of cores to instantiate")
 parser.add_argument('toggle_codelet', type = str, help = "Toggle SCM modules")
+parser.add_argument('num_mcu', type = int, help = "Number of MCU threads to instantiate; should be zero if DARTS mode")
 parser.add_argument('binary', type = str, help = "Path to binary to run")
 parser.add_argument('scm_file', type = str, help = "Path to SCM file for execution")
 args = parser.parse_args()
@@ -62,8 +63,8 @@ args = parser.parse_args()
 #class TestSystem(MySystem):
 class TestSystem(MyCodeletSystem):
     _CPUModel = valid_configs[args.config]
-    def __init__(self, scmProgPath, numCores, darts_config):
-        super(TestSystem, self).__init__(scmProgPath, numCores, darts_config)
+    def __init__(self, scmProgPath, numCores, numMcu, darts_config):
+        super(TestSystem, self).__init__(scmProgPath, numCores, numMcu, darts_config)
 
 if args.toggle_codelet == "SCM":
     darts_config = False
@@ -75,18 +76,18 @@ else:
 scm_file_name = args.scm_file
 if darts_config:
     scm_file_name = ""
-system = TestSystem(scm_file_name, args.num_cores, darts_config)
-system.setTestBinary(args.binary, args.num_cores, darts_config)
+system = TestSystem(scm_file_name, args.num_cores, args.num_mcu, darts_config)
+system.setTestBinary(args.binary, args.num_cores, darts_config, args.num_mcu)
 root = Root(full_system = False, system = system)
 m5.instantiate()
 
 if not darts_config:
     # With multiple CodeletInterfaces, we need to make sure in the CU runtime the addresses are checked properly
-    for i in range(args.num_cores):
+    for i in range(args.num_cores+args.num_mcu):
         #Mapping for the Codelet Interfaces and the SU
         system.cpu[i].workload[0].map(Addr(0x90000000),
                                       Addr(0x90000000),
-                                      0x4c * args.num_cores + 0x80, #Extending to cover space of multiple CodeletInterfaces and the SU 
+                                      0x4c * (args.num_cores + args.num_mcu) + 0x80, #Extending to cover space of multiple CodeletInterfaces and the SU 
                                       False) # These addresses should NOT be cacheable
         #Mapping for the register file / hidden register file 
         system.cpu[i].workload[0].map(Addr(0x90001000),

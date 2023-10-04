@@ -17,6 +17,7 @@ class SU(ClockedObject):
     su_ret_range = Param.AddrRange("Address range used by SU for codelet retirement")
 
     num_cus = Param.Unsigned(1, "Number of CUs this SU is managing")
+    num_mcus = Param.Unsigned(1, "Number of MCU threads this SU is managing")
 
     #interface_range_list = Param.AddrRangeList("List of address ranges for the CodeletInterfaces of the system")
 

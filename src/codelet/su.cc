@@ -602,7 +602,7 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
         //(*cu_map_ptr)[tmp.fire] = inst_pair;
         (*cu_map_ptr)[toPush->unid] = inst_pair;
         DPRINTF(SULoader, "Adding inst_pair %p mapped to %lx for CU %d\n", (*cu_map_ptr)[tmp.unid], (unsigned long)tmp.unid, cuToSchedule);
-        cuToSchedule = (cuToSchedule + 1) % numCus; // enforces round robin
+        cuToSchedule = (cuToSchedule + 1) % (numCus + numMcus); // enforces round robin
         return(true);
     } else {
         return(false);
@@ -1035,11 +1035,12 @@ SU::SU(const SUParams &params) :
     respBlocked(false), reqBlocked(false), originalPacket(nullptr), 
     waitingPortId(-1), 
     numCus(params.num_cus),
+    numMcus(params.num_mcus),
     regCopyState(EMPTY),
     //interfaceRangeList(params.interface_range_list),
     stats(this)
 {
-    for (int i=0; i<numCus; i++) {
+    for (int i=0; i<numCus+numMcus; i++) {
         // prepare correct number of fire : inst state pair maps
         //executingInsts.push_back(new std::map<fire_t, scm::instruction_state_pair *>);
         executingInsts.push_back(new std::map<uint64_t, scm::instruction_state_pair *>);
