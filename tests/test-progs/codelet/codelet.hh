@@ -43,6 +43,18 @@ typedef struct user_codelet_s {
     fire_t fire;
 } user_codelet_t;
 
+/* This structure is used when the user is creating Memory Codelets that will be referenced in the Codelet program
+   Practically, it is handled the same as Codelets except (1) it involves and extra fire_t field that points to a function
+   used to resolve the Memory Ranges that will be touched by this Memory Codelet (calculated at schedule-time) and
+   (2) Memory Codelets are only deployed to MCU threads and (3) once scheduled, they cannot be executed until it is ensured
+   that there is no active Memory Range conflict */
+typedef struct user_memcod_s {
+    uint16_t io;
+    char name[30];
+    fire_t fire;
+    fire_t rng_res;
+} user_memcod_t;
+
 /* This structure is needed so that:
    - The user can create Codelets connected to a certain function
    - The SU can connect the fire function to the Codelet in the SCM program by name

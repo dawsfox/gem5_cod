@@ -392,6 +392,7 @@ class SU : public ClockedObject
     unsigned cuToSchedule = 0; // used for round robin scheduling to CUs
 
     std::map<std::string, user_codelet_t> codMapping;
+    std::map<std::string, user_memcod_t> memcodMapping;
 
     unsigned char * regSpace = nullptr;
 

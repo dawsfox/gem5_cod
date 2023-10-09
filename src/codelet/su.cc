@@ -86,16 +86,50 @@ SU::getCodelets()
             DPRINTF(SULoader, "loaded user codelet mapping: %s - %p, %x\n", codStringName.data(), (void *)codMapping[codStringName].fire, codMapping[codStringName].io);
             scmBasePtr = (uint64_t) codelet_list[codelet_count-1].fire;
             DPRINTF(SULoader, "Loaded SCM base pointer: 0x%lx\n", scmBasePtr);
-        return(codelet_count);
-        /*
-        //for test printing
-        long unsigned * printable_program = (long unsigned *) prog_data->d_buf;
-        size_t byte_size = prog_data->d_size;
-        for (int i=0; i<byte_size/8; i++) {
-            DPRINTF(SULoader, "%lx\n", printable_program[i]);
-        }
-        */ 
+        //return(codelet_count);
+    } else { return(0); } // should really put an error here: it should never not find codelets
+    // now, find the memory codelets
+    program_found = false;
+    for (int sec_idx = 1; section; section = elf_getscn(real_elf, ++sec_idx)) {
+        GElf_Shdr shdr;
+        gelf_getshdr(section, &shdr);
+        // sh_name is the index in the string table where name is located, so check it in string table
+        // Return pointer to string at OFFSET in section INDEX.
+        char * section_name = elf_strptr(real_elf, string_index, shdr.sh_name);
+        //DPRINTF(SULoader, "checking section %s\n", section_name);
+        // if section name is .codelet_program
+        if (!strcmp(section_name, ".codelet_program")) {
+            DPRINTF(SULoader, "section %s FOUND\n", section_name);
+            program_found = true;
+            break;
+        }    
     }
+    if (program_found) {
+        // actually copy over the codelets now
+        Elf_Data *prog_data = elf_getdata(section, NULL);
+        //DPRINTF(SULoader, "Codelet data located at %p\n", prog_data);
+        user_memcod_t * memcod_list = (user_memcod_t *) prog_data->d_buf;
+        size_t codelet_count = prog_data->d_size / sizeof(user_memcod_t);
+        DPRINTF(SULoader, "Codelet list located at %p with %u codelets\n", memcod_list, codelet_count);
+        DPRINTF(SULoader, "size of user codelet: %u\n", sizeof(user_codelet_t));
+        for (int i=0; i<codelet_count; i++) {
+            DPRINTF(SULoader, "codelet %d is at address %p in elf\n", i, &(memcod_list[i]));
+            DPRINTF(SULoader, "codelet is: %x - %p - %p - %s\n", memcod_list[i].io, (void *)memcod_list[i].fire, (void *)memcod_list[i].rng_res, memcod_list[i].name);
+            char codName[30];
+            strcpy(codName, memcod_list[i].name);
+            std::string codStringName(codName);
+            // copying name from elf and then mapping it to the fire function in the SU::codMapping
+            //codMapping[codStringName] = (fire_t) codelet_list[i].fire;
+            user_memcod_t tmp;
+            tmp.io = memcod_list[i].io;
+            strcpy(tmp.name, memcod_list[i].name);
+            tmp.fire = memcod_list[i].fire;
+            tmp.rng_res = memcod_list[i].rng_res;
+            memcodMapping[codStringName] = tmp;
+            DPRINTF(SULoader, "loaded user codelet mapping: %s - %p - %p, %x\n", codStringName.data(), (void *)memcodMapping[codStringName].fire, (void *)memcodMapping[codStringName].rng_res, memcodMapping[codStringName].io);
+        }
+        //return(codelet_count);
+    } else { return(0); } // should really put an error here: it should never not find codelets
     return(0);
 }
 

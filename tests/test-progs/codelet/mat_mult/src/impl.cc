@@ -6,6 +6,7 @@
 #include <sys/mman.h>
 
 #define CODELET_NUM 6
+#define MEMCODELET_NUM 2
 
 #define TILES 10
 //#define TILE_DIM 16
@@ -20,14 +21,17 @@
 // dependencies are based on the scm program and managed by the SU
 // the last codelet in the list is a dummy codelet with no i/o that 
 // holds in its "fire" field the base pointer of SCM memory
-user_codelet_t codelet_graph[CODELET_NUM] __attribute__ ((section(".codelet_program"))) = {{OP1_WR | OP2_RD | OP3_RD, "LoadSqTile_2048L", loadSqTile},
+user_codelet_t codelet_graph[CODELET_NUM] __attribute__ ((section(".codelet_program"))) = {//{OP1_WR | OP2_RD | OP3_RD, "LoadSqTile_2048L", loadSqTile},
                                                                                            {OP1_WR | OP1_RD | OP2_RD | OP3_RD, "MatMult_2048L", matMult},
-                                                                                           {OP1_RD | OP2_RD | OP3_RD, "StoreSqTile_2048L", storeSqTile},
+                                                                                           //{OP1_RD | OP2_RD | OP3_RD, "StoreSqTile_2048L", storeSqTile},
                                                                                            {OP1_RD, "InitCod_64B", (fire_t)scm_init}, //for single tile version
                                                                                            {OP1_RD, "InitCod1280_64B", (fire_t)scm_init1280}, //for 128x1280 version
                                                                                            {0, "ScmMemBasePtr", (fire_t)SCM_MEMORY_BASE_PTR} // dummy codelet for scm memory base ptr
                                                                                            };
 
+user_memcod_t memory_codelets[MEMCODELET_NUM] __attribute__ ((section(".memory_codelets"))) = {{OP1_WR | OP2_RD | OP3_RD, "LoadSqTile_2048L", loadSqTile},
+                                                                                               {OP1_RD | OP2_RD | OP3_RD, "StoreSqTile_2048L", storeSqTile}
+                                                                                               };
 
 void initMatrix (double * mat, int elements, int val = 0) {
   for (int i = 0; i < elements; i++)
