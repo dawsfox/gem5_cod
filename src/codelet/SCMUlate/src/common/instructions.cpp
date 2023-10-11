@@ -58,10 +58,16 @@ namespace scm {
           //cod_exec = new codelet(3, newArgs, scm::OP_IO::OP1_WR | scm::OP_IO::OP2_RD | scm::OP_IO::OP3_RD);
           
           cod_exec = new codelet(3, newArgs, inst_memory->getOwner()->getCodeletIo(this->getInstruction()));
-          cod_exec->setMemoryRange(&this->memRanges);
-          cod_exec->setFireFunc((void *)inst_memory->getOwner()->getCodeletFire(this->getInstruction()));
           if (cod_exec == nullptr) 
             return false;
+          cod_exec->setMemoryRange(&this->memRanges);
+          bool isMemcod = inst_memory->getOwner()->isMemcod(this->getInstruction());
+          if(isMemcod) {
+            cod_exec->setFireFunc((void *)inst_memory->getOwner()->getMemcodFire(this->getInstruction()));
+            cod_exec->setResRng((void *)inst_memory->getOwner()->getMemcodResRng(this->getInstruction()));
+          } else {
+            cod_exec->setFireFunc((void *)inst_memory->getOwner()->getCodeletFire(this->getInstruction()));
+          }
           for (uint32_t op_num = 1; op_num <= MAX_NUM_OPERANDS; op_num++) {
             operand_t & op = getOp(op_num);
             op.read = OP_IO::getOpRDIO(op_num) & cod_exec->getOpIO();

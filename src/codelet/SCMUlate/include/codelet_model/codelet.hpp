@@ -104,20 +104,50 @@ namespace scm {
       // For now, we start with a registers only implementation
       codelet_params params;
       std::uint_fast16_t op_in_out;
+      bool isMemCod;
       void * fire_func;
+      void * res_rng;
       cu_executor_module * myExecutor;
     public:
       codelet () {};
-      codelet (uint32_t nparms, codelet_params params, std::uint_fast16_t opIO) : numParams(nparms), memoryRanges(nullptr), params(params), op_in_out(opIO) {};
-      codelet (const codelet &other) : numParams(other.numParams), memoryRanges(nullptr), params(other.params), op_in_out(other.op_in_out), myExecutor(other.myExecutor) {}
+      // consider this the constructor for main (non-memory) codelets
+      codelet (uint32_t nparms, codelet_params params, std::uint_fast16_t opIO) : 
+              numParams(nparms),
+              memoryRanges(nullptr),
+              params(params),
+              op_in_out(opIO),
+              isMemCod(false) 
+              {}
+      // and this constructor for memory codelets
+      codelet (uint32_t nparms, codelet_params params, std::uint_fast16_t opIO, bool isMemCod, void * res_rng) : 
+              numParams(nparms),
+              memoryRanges(nullptr),
+              params(params),
+              op_in_out(opIO),
+              isMemCod(isMemCod),
+              res_rng(res_rng) 
+              {}
+      // copy constructor
+      codelet (const codelet &other) : 
+              numParams(other.numParams),
+              memoryRanges(nullptr),
+              params(other.params),
+              op_in_out(other.op_in_out),
+              myExecutor(other.myExecutor),
+              isMemCod(other.isMemCod),
+              fire_func(other.fire_func),
+              res_rng(other.res_rng) 
+              {}
       //virtual void implementation() = 0;
-      virtual bool isMemoryCodelet() { return false; }
+      virtual bool isMemoryCodelet() { return isMemCod; }
       virtual void calculateMemRanges() { };
       void setMemoryRange( memranges_pair * memRange ) { this->memoryRanges = memRange; };
       memranges_pair * getMemoryRange() { return memoryRanges; };
       bool isOpAnAddress(int op_num) { return params.isParamAnAddress(op_num); };
       void setFireFunc(void * fire_func) {this->fire_func = fire_func;}
+      void setResRng(void * res_rng) {this->res_rng = res_rng;}
       void * getFireFunc() {return(this->fire_func);}
+      void * getResRng() {return(this->res_rng);}
       inline codelet_params& getParams() { return this->params; };
       inline std::uint_fast16_t& getOpIO() { return op_in_out; };
       inline void setExecutor (cu_executor_module * exec) {this->myExecutor = exec;}

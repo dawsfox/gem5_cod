@@ -451,6 +451,9 @@ class SU : public ClockedObject
     uint64_t getScmBasePtr() { return(scmBasePtr); }
 
     fire_t getCodeletFire(std::string codName);
+    fire_t getMemcodResRng(std::string codName);
+    fire_t getMemcodFire(std::string codName);
+    bool isMemcod(std::string codName);
     uint16_t getCodeletIo(std::string codName);
     void * fetchOp(scm::decoded_reg_t * reg);
     void writeOp(scm::decoded_reg_t * reg, void * src);

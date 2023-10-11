@@ -133,6 +133,18 @@ SU::getCodelets()
     return(0);
 }
 
+bool
+SU::isMemcod(std::string codName)
+{
+   auto tmp = codMapping.find(codName);
+   if (tmp == codMapping.end()) {
+        auto mem_tmp = memcodMapping.find(codName);
+        if (mem_tmp == memcodMapping.end()) {
+            SCMULATE_ERROR(0, "Codelet could not be found in codMapping nor memcodMapping");
+        } else { return(true); }
+   } else { return(false); }
+}
+
 fire_t
 SU::getCodeletFire(std::string codName)
 {
@@ -141,6 +153,34 @@ SU::getCodeletFire(std::string codName)
       for(auto it = codMapping.cbegin(); it != codMapping.cend(); ++it)
       {
         SCMULATE_INFOMSG(3, "Codelet %s at %p", it->first.c_str(), (void *) it->second.fire);
+      }
+        SCMULATE_ERROR(0, "Fire function requested from SU for codelet %s not found", codName.c_str());
+    }
+    return(tmp);
+}
+
+fire_t
+SU::getMemcodResRng(std::string codName)
+{
+    fire_t tmp = memcodMapping[codName].rng_res;
+    if (!tmp) {
+      for(auto it = memcodMapping.cbegin(); it != memcodMapping.cend(); ++it)
+      {
+        SCMULATE_INFOMSG(3, "Codelet %s with %p", it->first.c_str(), (void *) it->second.rng_res);
+      }
+        SCMULATE_ERROR(0, "Fire function requested from SU for codelet %s not found", codName.c_str());
+    }
+    return(tmp);
+}
+
+fire_t
+SU::getMemcodFire(std::string codName)
+{
+    fire_t tmp = memcodMapping[codName].fire;
+    if (!tmp) {
+      for(auto it = memcodMapping.cbegin(); it != memcodMapping.cend(); ++it)
+      {
+        SCMULATE_INFOMSG(3, "Codelet %s with %p", it->first.c_str(), (void *) it->second.fire);
       }
         SCMULATE_ERROR(0, "Fire function requested from SU for codelet %s not found", codName.c_str());
     }
@@ -580,7 +620,7 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
     void * dest = nullptr;
     void * src1 = nullptr;
     void * src2 = nullptr;
-    // code belowed adapted from decoded_instruction_t::decodeOperands
+    // code below adapted from decoded_instruction_t::decodeOperands
     for (uint32_t op_num = 1; op_num <= MAX_NUM_OPERANDS; op_num++) {
         std::string & opStr = inst->getOpStr(op_num);
         //DPRINTF(SUSCM, "Reading operand: %s\n", opStr.data());
@@ -606,12 +646,6 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
             }
         }
     }
-    /*
-    if (!dest || !src1 || !src2) {
-        DPRINTF(SUSCM, "operands missing for codelet %s\n", codName);
-        return(false);
-    }
-    */
     runt_codelet_t tmp;
     tmp.fire = (fire_t) scmCod->getFireFunc();
     tmp.dest = dest;
