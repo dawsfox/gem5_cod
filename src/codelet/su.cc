@@ -571,43 +571,50 @@ SU::CodSideReqPort::recvReqRetry()
 
 
 bool
-SU::sendRequest(runt_codelet_t *toPush, Addr dest)
+//SU::sendRequest(runt_codelet_t *toPush, Addr dest)
+SU::sendRequest(void *toPush, Addr dest, bool isMemCod)
 {
     if (reqBlocked) { //can't send if already being used
         return false;
     }
-    /*
-        Request::Flags reqFlags2(Request::PHYSICAL); //should be able to keep PHYSICAL flag since register file is mapped
-        const RequestPtr src_req = std::shared_ptr<Request>(new Request(Addr(0x90bb9010), sizeof(uint64_t), reqFlags2, reqId));
-        PacketPtr src_pkt = Packet::createRead(src_req);
-        src_pkt->dataStatic<uint64_t>(new uint64_t);
-        DPRINTF(SUSCM, "Sending out functional read packet %s\n", src_pkt->print());
-        memPort.sendFunctional(src_pkt);
-        DPRINTF(SUSCM, "Read packet returned value 0x%lx\n", *src_pkt->getPtr<uint64_t>());
-        delete src_pkt->getPtr<uint64_t>();
-    */
     // request is not blocked, so now lets give the codelet a unique id and increment it
-    toPush->unid = codUniqueId;
-    codUniqueId++; // increment unique codelet id for next send
-
-    DPRINTF(SU, "Pushing codelet %s with unique id 0x%lx to interface with addr %#x\n", toPush->name, toPush->unid, dest);
-    reqBlocked = true;
-    // addr should be one that is contained within the CodeletInterface
-    // between 0x90000000 and 0x9000000f. Should be a write, also...
-
-    // need to make a request object first to pass to the packet
-    // let's say the SU has requestor ID 55..... if not, make it invalid somehow
-    Request::Flags reqFlags(Request::UNCACHEABLE | Request::PHYSICAL);
-    const RequestPtr codReq = std::shared_ptr<Request>(new Request(dest, sizeof(runt_codelet_t), reqFlags, 55));
-    PacketPtr codPkt = Packet::createWrite(codReq);
-    codPkt->dataStatic<runt_codelet_t>(toPush);
-    codReqPort.sendPacket(codPkt);
+    if (isMemCod) {
+        runt_memcod_t * toSend = reinterpret_cast<runt_memcod_t *>(toPush);
+        toSend->unid = codUniqueId;
+        codUniqueId++; // increment unique codelet id for next send
+        DPRINTF(SU, "Pushing codelet %s with unique id 0x%lx to interface with addr %#x\n", toSend->name, toSend->unid, dest);
+        reqBlocked = true;
+        // need to make a request object first to pass to the packet
+        // let's say the SU has requestor ID 55..... if not, make it invalid somehow
+        Request::Flags reqFlags(Request::UNCACHEABLE | Request::PHYSICAL);
+        const RequestPtr codReq = std::shared_ptr<Request>(new Request(dest, sizeof(runt_memcod_t), reqFlags, 55));
+        PacketPtr codPkt = Packet::createWrite(codReq);
+        codPkt->dataStatic<runt_memcod_t>(toSend);
+        codReqPort.sendPacket(codPkt);
+    } else {
+        runt_codelet_t * toSend = reinterpret_cast<runt_codelet_t *>(toPush);
+        toSend->unid = codUniqueId;
+        codUniqueId++; // increment unique codelet id for next send
+        DPRINTF(SU, "Pushing codelet %s with unique id 0x%lx to interface with addr %#x\n", toSend->name, toSend->unid, dest);
+        reqBlocked = true;
+        // need to make a request object first to pass to the packet
+        // let's say the SU has requestor ID 55..... if not, make it invalid somehow
+        Request::Flags reqFlags(Request::UNCACHEABLE | Request::PHYSICAL);
+        const RequestPtr codReq = std::shared_ptr<Request>(new Request(dest, sizeof(runt_codelet_t), reqFlags, 55));
+        PacketPtr codPkt = Packet::createWrite(codReq);
+        codPkt->dataStatic<runt_codelet_t>(toSend);
+        codReqPort.sendPacket(codPkt);
+    }
     return(true);
 }
 
 bool
 SU::pushFromFD(scm::instruction_state_pair *inst_pair)
 {
+    // this is just here so we don't do all the work
+    // of packing the runtime if we can't send yet anyways
+    // can be removed when we switch codports to qports
+    if (reqBlocked) return(false);
     // take instruction state pair and turn into a runtime codelet
     scm::decoded_instruction_t * inst = inst_pair->first;
     // first, to simplify we assume no immediates
@@ -646,34 +653,60 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
             }
         }
     }
-    runt_codelet_t tmp;
-    tmp.fire = (fire_t) scmCod->getFireFunc();
-    tmp.dest = dest;
-    tmp.src1 = src1;
-    tmp.src2 = src2;
-    strcpy(tmp.name, codName.data());
-    // we do not set the codelet unique id yet because we don't want to cycle through them
-    // before we actually schedule them, so we will do it in sendRequest
-    // TODO: add a way to make sure this gets freed at some point
-    runt_codelet_t * toPush = (runt_codelet_t *) malloc(sizeof(runt_codelet_t));
-    memcpy(toPush, &tmp, sizeof(runt_codelet_t));
-    //uint64_t dest_val = *((uint64_t *)tmp.dest);
-    //DPRINTF(SUSCM, "dest has value 0x%lx\n", dest_val);
-    // send to CodeletInterface
-    // at some point, we should avoid doing this work every single time unless SU isn't blocked
-    //Addr interface_addr(0x90000000 + (cuToSchedule * 0x4c));
-    Addr interface_addr(0x90000000 + (cuToSchedule * (sizeof(runt_codelet_t)+sizeof(unsigned))));
-    if(sendRequest(toPush, interface_addr)) {
-        DPRINTF(SUSCM, "Runtime codelet sent: %p\t%p\t%p\t%p\t%s\n", (void *)tmp.fire, tmp.dest, tmp.src1, tmp.src2, tmp.name);
-        // add instruction that was sent to the list of instructions in execution
-        auto cu_map_ptr = executingInsts[cuToSchedule];
-        //(*cu_map_ptr)[tmp.fire] = inst_pair;
-        (*cu_map_ptr)[toPush->unid] = inst_pair;
-        DPRINTF(SULoader, "Adding inst_pair %p mapped to %lx for CU %d\n", (*cu_map_ptr)[tmp.unid], (unsigned long)tmp.unid, cuToSchedule);
-        cuToSchedule = (cuToSchedule + 1) % (numCus + numMcus); // enforces round robin
-        return(true);
+    bool request_resp;
+    if (isMemcod(codName)) {
+        runt_memcod_t tmp;
+        tmp.fire = (fire_t) scmCod->getFireFunc();
+        tmp.rng_res = (fire_t) scmCod->getResRng();
+        tmp.dest = dest;
+        tmp.src1 = src1;
+        tmp.src2 = src2;
+        strcpy(tmp.name, codName.data());
+        runt_memcod_t * toPush = (runt_memcod_t *) malloc(sizeof(runt_memcod_t));
+        memcpy(toPush, &tmp, sizeof(runt_memcod_t));
+        // send to CodeletInterface; set the addr to the correct one based on the CU we're scheduling to
+        //Addr interface_addr(0x90000000 + (cuToSchedule * (sizeof(runt_codelet_t)+sizeof(unsigned))));
+        // there will be a sequential mcu arbiter that handles memory range resolution so this should
+        // be able to be the space AFTER all the codelet interfaces (including the ones on each mcuthread)
+        Addr mcu_interface_addr(0x90000000 + ((numCus + numMcus) * (sizeof(runt_codelet_t)+sizeof(unsigned))));
+        // here need to call a function sendMemcodRequest that
+        // accepts runt_memcod instead of runt_codelet
+        if(sendRequest(toPush, mcu_interface_addr, true)) {
+            DPRINTF(SUSCM, "Runtime codelet sent: %p\t%p\t%p\t%p\t%s\n", (void *)tmp.fire, tmp.dest, tmp.src1, tmp.src2, tmp.name);
+            // add instruction that was sent to the list of instructions in execution
+            auto cu_map_ptr = executingInsts[cuToSchedule];
+            (* cu_map_ptr)[toPush->unid] = inst_pair;
+            DPRINTF(SULoader, "Adding inst_pair %p mapped to %lx for CU %d\n", (*cu_map_ptr)[tmp.unid], (unsigned long)tmp.unid, cuToSchedule);
+            cuToSchedule = (cuToSchedule + 1) % (numCus + numMcus); // enforces round robin
+            return(true);
+        } else {
+            return(false);
+        }
     } else {
-        return(false);
+        runt_codelet_t tmp;
+        tmp.fire = (fire_t) scmCod->getFireFunc();
+        tmp.dest = dest;
+        tmp.src1 = src1;
+        tmp.src2 = src2;
+        strcpy(tmp.name, codName.data());
+        // we do not set the codelet unique id yet because we don't want to cycle through them
+        // before we actually schedule them, so we will do it in sendRequest
+        // TODO: add a way to make sure this gets freed at some point
+        runt_codelet_t * toPush = (runt_codelet_t *) malloc(sizeof(runt_codelet_t));
+        memcpy(toPush, &tmp, sizeof(runt_codelet_t));
+        // send to CodeletInterface; set the addr to the correct one based on the CU we're scheduling to
+        Addr interface_addr(0x90000000 + (cuToSchedule * (sizeof(runt_codelet_t)+sizeof(unsigned))));
+        if(sendRequest(toPush, interface_addr, false)) {
+            DPRINTF(SUSCM, "Runtime codelet sent: %p\t%p\t%p\t%p\t%s\n", (void *)tmp.fire, tmp.dest, tmp.src1, tmp.src2, tmp.name);
+            // add instruction that was sent to the list of instructions in execution
+            auto cu_map_ptr = executingInsts[cuToSchedule];
+            (* cu_map_ptr)[toPush->unid] = inst_pair;
+            DPRINTF(SULoader, "Adding inst_pair %p mapped to %lx for CU %d\n", (*cu_map_ptr)[tmp.unid], (unsigned long)tmp.unid, cuToSchedule);
+            cuToSchedule = (cuToSchedule + 1) % (numCus + numMcus); // enforces round robin
+            return(true);
+        } else {
+            return(false);
+        }
     }
 
 }
@@ -681,27 +714,45 @@ SU::pushFromFD(scm::instruction_state_pair *inst_pair)
 bool
 SU::commitFromFD()
 {
-    // TODO: add a way to make sure this gets freed at some point
-    runt_codelet_t * toPush = (runt_codelet_t *) malloc(sizeof(runt_codelet_t));
-    // since commit has been called, we send out the finalCod to turn off the CU runtime
-    memcpy(toPush, &finalCod, sizeof(runt_codelet_t));
-    DPRINTF(SUSCM, "Sending final codelet: %p\t%s\n", (void *)toPush->fire, toPush->name);
-    // send to CodeletInterface
-    // need to manage this better, with the SU having a count of CUs 
-    // and managing different instruction lists for them
-    Addr interface_addr(0x90000000 + (numCus-1) * (sizeof(runt_codelet_t)+sizeof(unsigned)));
-    if(sendRequest(toPush, interface_addr)) {
-        if (numCus > 1) {
-            // numCus acts here like a number of active CUs
-            numCus--; //subtract num CUs so next tick the next interface will be sent to
-            return(false);
-        }
-        // only return true when ALL CUs are turned off
-        return(true);
-    } else {
+    if (numMcus > 0) {
+        runt_memcod_t * toPush = (runt_memcod_t *) malloc(sizeof(runt_memcod_t));
+        toPush->fire = finalCod.fire;
+        toPush->rng_res = finalCod.fire;
+        Addr interface_addr(0x90000000 + (numCus+numMcus-1) * (sizeof(runt_codelet_t)+sizeof(unsigned)));
+        if(sendRequest(toPush, interface_addr, false)) {
+            if (numMcus > 1) {
+                // numCus acts here like a number of active CUs
+                numMcus--; //subtract num CUs so next tick the next interface will be sent to
+            }
+            // only return true when ALL CUs are turned off
+        }     
         return(false);
     }
-
+    if (numCus < 1) {
+        return(true);
+    } else {
+        // TODO: add a way to make sure this gets freed at some point
+        runt_codelet_t * toPush = (runt_codelet_t *) malloc(sizeof(runt_codelet_t));
+        // since commit has been called, we send out the finalCod to turn off the CU runtime
+        memcpy(toPush, &finalCod, sizeof(runt_codelet_t));
+        DPRINTF(SUSCM, "Sending final codelet: %p\t%s\n", (void *)toPush->fire, toPush->name);
+        // send to CodeletInterface
+        // need to manage this better, with the SU having a count of CUs 
+        // and managing different instruction lists for them
+        Addr interface_addr(0x90000000 + (numCus-1) * (sizeof(runt_codelet_t)+sizeof(unsigned)));
+        // below needs to be changed to account for MCU threads
+        if(sendRequest(toPush, interface_addr, false)) {
+            if (numCus > 1) {
+                // numCus acts here like a number of active CUs
+                numCus--; //subtract num CUs so next tick the next interface will be sent to
+                return(false);
+            }
+            // only return true when ALL CUs are turned off
+            return(true);
+        } else {
+            return(false);
+        }
+    }
 }
 
 bool

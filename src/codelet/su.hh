@@ -289,7 +289,7 @@ class SU : public ClockedObject
     bool accessFunctional(PacketPtr pkt);
 
     // used to push Codelets out to CUs
-    bool sendRequest(runt_codelet_t *toPush, Addr dest);
+    bool sendRequest(void *toPush, Addr dest, bool isMemCod);
 
     /**
      * Tell the CPU side to ask for our memory ranges.
