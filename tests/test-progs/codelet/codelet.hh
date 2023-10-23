@@ -12,6 +12,17 @@
 #define CODELET_AVAILABLE(cu_id)  ((volatile unsigned *) (((char *)INTERFACE_COD_AVAIL_PTR) + (cu_id) * (sizeof(runt_codelet_t) + sizeof(unsigned))))
 #define TO_FIRE(cu_id) ((volatile runt_codelet_t *) (((char *)INTERFACE_ACTIVE_COD_PTR) + (cu_id) * (sizeof(runt_codelet_t) + sizeof(unsigned))))
 
+//below define statements are for the mcu runtime where cu_id will be the highest of all cores
+#define MEMCOD_BASE(cu_id) ((volatile runt_memcod_t *) (((char *)INTERFACE_ACTIVE_COD_PTR) + (cu_id) * (sizeof(runt_codelet_t) + sizeof(unsigned))))
+// used for checking if there is a memcod waiting in queue
+#define MEMCOD_AVAILABLE(cu_id) ((volatile unsigned *) (((char *)MEMCOD_BASE(cu_id)) + sizeof(runt_memcod_t)))
+// used for writing the start value of a memrange
+#define MEMRANGE_BASE(cu_id) (volatile long unsigned *) (((char *)MEMCOD_BASE(cu_id))+(sizeof(runt_memcod_t) + sizeof(unsigned)))
+// used for writing the size of the memrange
+#define MEMRANGE_SIZE(cu_id) (volatile unsigned *) (((char *)MEMRANGE_BASE(cu_id))+(sizeof(long unsigned)))
+// used for signaling to memcod interface that the range is complete and should be added to active memranges
+#define MEMRANGE_SUBMIT(cu_id) (volatile unsigned *) (((char *)MEMRANGE_SIZE(cu_id))+(sizeof(unsigned)))
+
 // typedef for fire function (function pointer)
 typedef void (*fire_t)(void * dest, void * src1, void * src2);
 
@@ -54,6 +65,18 @@ typedef struct user_memcod_s {
     fire_t fire;
     fire_t rng_res;
 } user_memcod_t;
+
+/* This is the memory codelet version of the runtime codelet structure. It includes a rng_res function for 
+   resolving at schedule-time the memory ranges that a memcod will read/write for consistency management. */
+typedef struct runt_memcod_s {
+    fire_t fire = nullptr;
+    fire_t rng_res = nullptr;
+    void * src1 = nullptr;
+    void * src2 = nullptr;
+    void * dest = nullptr;
+    char name[32];
+    uint64_t unid; //unique id
+} runt_memcod_t;
 
 /* This structure is needed so that:
    - The user can create Codelets connected to a certain function

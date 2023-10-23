@@ -10,6 +10,19 @@
 #include "codelet/codelet.hh"
 #include <queue>
 
+typedef struct memcod_range_s
+{
+  uint64_t start = 0;
+  uint64_t size = 0;
+  uint64_t unid = 0;
+} memcod_range_t;
+
+typedef struct memranges_pair_s 
+{
+  std::set<memcod_range_t> reads;
+  std::set<memcod_range_t> writes;
+} memranges_pair_t;
+
 namespace gem5
 {
 class MemcodInterface : public ClockedObject
@@ -418,6 +431,18 @@ class MemcodInterface : public ClockedObject
     // a staging location for the CPU to be able to read multiple fields 
     // as much as it wants until the codelet is retired
     runt_memcod_t activeCodelet = {nullptr, nullptr, nullptr, nullptr, nullptr, ""};
+    
+    // collection of all the memranges currently in use
+    memranges_pair_t activeRanges;
+
+    // collection of active memRanges being resolved by the resolver
+    memranges_pair_t resolvedRanges;
+
+    // single current range to be filled by the range resolution function
+    // this needs to be mem mapped to the resolving core, as well as a space
+    // to submit the range and mark as read or write (isWrite)
+    memcod_range_t resolvingRange;
+    uint32_t isWrite;
 
   protected:
     struct MemcodInterfaceStats : public statistics::Group

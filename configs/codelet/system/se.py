@@ -61,7 +61,8 @@ class MyCodeletSystem(System):
 
     #self.cpu=[self._CPUModel(cpu_id=i) for i in range(numCores)]
     #self.cpu.extend([X86TimingSimpleCPU(cpu_id=numCores+i) for i in range(numMcu)])
-    self.cpu = [self._CPUModel(cpu_id=i) for i in range(numCores)] + [X86TimingSimpleCPU(cpu_id=numCores+i) for i in range(numMcu)]
+    # Main CPU cores for computation, simple cores as MCU threads, then a single simple core for resolving memcods' memory ranges at runtime
+    self.cpu = [self._CPUModel(cpu_id=i) for i in range(numCores)] + [X86TimingSimpleCPU(cpu_id=numCores+i) for i in range(numMcu)] + [X86TimingSimpleCPU(cpuid=numCores+numMcu)]
 
     # Create a memory bus
     self.membus = SystemXBar(width = 192)
@@ -192,8 +193,15 @@ class MyCodeletSystem(System):
         self.cpu[i+numCores].interrupts[0].pio = self.membus.mem_side_ports
         self.cpu[i+numCores].interrupts[0].int_requestor = self.membus.cpu_side_ports
         self.cpu[i+numCores].interrupts[0].int_responder = self.membus.mem_side_ports
-
       #end for loop
+      # Connect single memory codelet interface
+      self.memcod_interface = MemcodInterface()
+      self.memcod_interface.cod_side_req_port = self.codbus.cpu_side_ports
+      self.memcod_interface.cod_side_resp_port = self.codbus.mem_side_ports
+      # For now no cache on the memrange resolving core, connect dport to interface and iport to L3
+      self.memcod_interface.cpu_side_port = self.cpu[numCores+numMcu].dcache_port
+      self.cpu[numCores+numMcu].icache_port = self.l3bus.cpu_side_ports
+
       # Create SU
       self.su = SU()
       tmp_su_range = AddrRange(start = Addr(0x90000000) + 0x4c * (numCores+numMcu),
@@ -265,6 +273,10 @@ class MyCodeletSystem(System):
         self.cpu[i].workload = process
         self.workload = SEWorkload.init_compatible(binary_path)
         self.cpu[i].createThreads()
+      # now for the range resolution core... expects binary path with MCU suffix
+      process = Process(cmd = [binary_path+"_MCU", str(numCores+mcuNum)], pid=100+numCores+mcuNum)
+      self.cpu[numCores+mcuNum].workload = process
+      self.cpu[numCores+mcuNum].createThreads()
     else:
       process = Process(cmd = [binary_path, str(1), str(numCores)], pid=100)
       self.workload = SEWorkload.init_compatible(binary_path)
