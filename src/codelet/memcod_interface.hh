@@ -381,6 +381,10 @@ class MemcodInterface : public ClockedObject
 
     void init() override;
 
+    bool sendRequest(runt_memcod_t *toPush, Addr dest);
+
+    bool hasMemrangeConflict(memranges_pair_t *toCheck);
+
     /// Latency to read or pop from the codelet queue
     const Cycles queueLatency;
 
@@ -438,11 +442,18 @@ class MemcodInterface : public ClockedObject
     // collection of active memRanges being resolved by the resolver
     memranges_pair_t resolvedRanges;
 
+    std::map<uint64_t, memranges_pair_t> memrangeMap;
+
     // single current range to be filled by the range resolution function
     // this needs to be mem mapped to the resolving core, as well as a space
     // to submit the range and mark as read or write (isWrite)
     memcod_range_t resolvingRange;
     uint32_t isWrite;
+
+    // event used to perform tasks and advance cycles
+    EventFunctionWrapper tickEvent;
+
+    void tick();
 
   protected:
     struct MemcodInterfaceStats : public statistics::Group

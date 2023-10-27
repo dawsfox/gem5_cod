@@ -24,6 +24,8 @@ MemcodInterface::MemcodInterface(const MemcodInterfaceParams &params) :
     memPort(params.name + ".mem_side_port", this, "MemSidePort"),
     codReqPort(params.name + "cod_side_req_port", this),
     codRespPort(params.name + ".cod_side_resp_port", this),
+    tickEvent([this]{ tick(); }, "MCI tick",
+                false, Event::CPU_Tick_Pri),
     blocked(false), originalPacket(nullptr), waitingPortId(-1), stats(this)
 { }
 
@@ -107,7 +109,7 @@ MemcodInterface::accessFunctional(PacketPtr pkt, int port_id)
         return(true);
     }
     // InvalidPortID means that this write request is from the SU
-    // Meaning it is an attempt to push a Codelet to the CU
+    // Meaning it is an attempt to push a Codelet to the MCUs
     else if (pkt->isWrite() && port_id == InvalidPortID) {
         auto pkt_data = pkt->getPtr<uint8_t>();
         runt_memcod_t toPush;
@@ -139,57 +141,75 @@ MemcodInterface::accessFunctional(PacketPtr pkt, int port_id)
     // Later we also need to forward this to the SU so fetchDecode can
     // accurately retire the associated instruction, but for now we will just
     // send a response
-    // TODO: forward this request to the SU after implementing CodReqPort here
-    // and CodRespPort in SU. Maybe flow issues if we forward from here, we'll see
     else if (pkt->isWrite()) {
-        // copy active codelet to send to SU so it can retire the associated instruction
-        //runt_codelet_t * toRetire = new runt_codelet_t;
-        retire_data_t * toRetire = new retire_data_t;
-        //memcpy(&(toRetire->toRet), &activeCodelet, sizeof(runt_codelet_t));
-        toRetire->toRet.fire = activeCodelet.fire;
-        //toRetire->toRet.name = activeCodelet.name;
-        memcpy(toRetire->toRet.name, activeCodelet.name, sizeof(char)*32);
-        toRetire->toRet.unid = activeCodelet.unid;
-        toRetire->toRet.dest = activeCodelet.dest;
-        toRetire->toRet.src1 = activeCodelet.src1;
-        toRetire->toRet.src2 = activeCodelet.src2;
-        toRetire->cuId = cuId; 
-        // perform local codelet retirement; stage new codelet or set codeletAvailable to 0
-        if (codQueue.empty()) { //if the queue is empty, no more codelets currently available
-            DPRINTF(MemcodInterfaceQueue, "CPU retiring Codelet %s with cuId %d; no more Codelets available\n", activeCodelet.name, toRetire->cuId);
-            codeletAvailable = 0;
-        } else { // if not, simply stage the next codelet from the queue
-            runt_memcod_t toPush = codQueue.front();
-            activeCodelet = toPush;
-            DPRINTF(MemcodInterfaceQueue, "CPU retiring Codelet %s with cuId %d; setting new activeCodelet %s\n", toRetire->toRet.name, toRetire->cuId, toPush.name);
-            codQueue.pop();
+        Addr reqAddr = pkt->getAddr(); // the address trying to be read
+        if (reqAddr >= queueRange.start() + sizeof(runt_memcod_t)) { // if requested address is not in the activeCodelet space
+            if (reqAddr == queueRange.start() + sizeof(runt_memcod_t) + sizeof(unsigned)) {
+                // if writing memrange start (should be 8 bytes)
+                assert(pkt->getSize() == sizeof(uint64_t));
+                resolvingRange.start = *(pkt->getPtr<uint64_t>());
+            } else if (reqAddr == queueRange.start() + sizeof(runt_memcod_t) + sizeof(unsigned) + sizeof(uint64_t)) {
+                // if writing memrange size (should be 4 bytes)
+                assert(pkt->getSize() == sizeof(unsigned));
+                resolvingRange.size = *(pkt->getPtr<unsigned>());
+            } else if (reqAddr == queueRange.start() + sizeof(runt_memcod_t) + sizeof(unsigned) * 2 + sizeof(uint64_t)) {
+                // if writing memrange write/read
+                assert(pkt->getSize() == sizeof(unsigned));
+                isWrite = *(pkt->getPtr<unsigned>());
+            } else if (reqAddr == queueRange.start() + sizeof(runt_memcod_t) + sizeof(unsigned) * 3 + sizeof(uint64_t)) {
+                // if submitting current memrange
+                assert(pkt->getSize() == sizeof(unsigned));
+                // set unid here from active codelet before we insert so it is linked to the memcod
+                resolvingRange.unid = activeCodelet.unid;
+                if (isWrite) {
+                    resolvedRanges.writes.insert(resolvingRange);
+                } else {
+                    resolvedRanges.reads.insert(resolvingRange);
+                }
+                resolvingRange.start = 0;
+                resolvingRange.size = 0;
+                
+            }
+
+        } else if (reqAddr >= queueRange.start() && reqAddr < queueRange.start() + sizeof(runt_memcod_t)) {
+            // memcod retirement here
+            // copy active codelet to send to SU so it can retire the associated instruction
+            retire_data_t * toRetire = new retire_data_t;
+            toRetire->toRet.fire = activeCodelet.fire;
+            memcpy(toRetire->toRet.name, activeCodelet.name, sizeof(char)*32);
+            toRetire->toRet.unid = activeCodelet.unid;
+            toRetire->toRet.dest = activeCodelet.dest;
+            toRetire->toRet.src1 = activeCodelet.src1;
+            toRetire->toRet.src2 = activeCodelet.src2;
+            toRetire->cuId = cuId; 
+            // perform local codelet retirement; stage new codelet or set codeletAvailable to 0
+            if (codQueue.empty()) { //if the queue is empty, no more codelets currently available
+                DPRINTF(MemcodInterfaceQueue, "CPU retiring Codelet %s with cuId %d; no more Codelets available\n", activeCodelet.name, toRetire->cuId);
+                codeletAvailable = 0;
+            } else { // if not, simply stage the next codelet from the queue
+                runt_memcod_t toPush = codQueue.front();
+                activeCodelet = toPush;
+                DPRINTF(MemcodInterfaceQueue, "CPU retiring Codelet %s with cuId %d; setting new activeCodelet %s\n", toRetire->toRet.name, toRetire->cuId, toPush.name);
+                codQueue.pop();
+            }
+            // send to SU first -- build new packet / request of size runt_codelet_t for SU
+            DPRINTF(MemcodInterfaceQueue, "Upgrading packet to codelet size\n");
+            assert(pkt->needsResponse());
+            // Save the old packet
+            originalPacket = pkt;
+            MemCmd cmd;
+            cmd = MemCmd::WriteReq;
+            // Create a new packet that is size of necessary data for retiring
+            PacketPtr new_pkt = new Packet(pkt->req, cmd, sizeof(retire_data_t));
+            auto data = pkt->getPtr<retire_data_t>();
+            unsigned int size = new_pkt->getSize();
+            new_pkt->setAddr(suRetAddr);
+            new_pkt->dataDynamic<retire_data_t>(toRetire);
+            codReqPort.sendPacket(new_pkt); //send new packet to SU
+            // do not send response here: the response will be handled when the MemcodInterface receives
+            // the response from the SU
+            return(true);
         }
-        // send to SU first -- build new packet / request of size runt_codelet_t for SU
-        //Addr addr = pkt->getAddr();
-        DPRINTF(MemcodInterfaceQueue, "Upgrading packet to codelet size\n");
-        assert(pkt->needsResponse());
-        // Save the old packet
-        originalPacket = pkt;
-        MemCmd cmd;
-        cmd = MemCmd::WriteReq;
-        // Create a new packet that is size of codelet
-        //PacketPtr new_pkt = new Packet(pkt->req, cmd, sizeof(runt_codelet_t));
-        PacketPtr new_pkt = new Packet(pkt->req, cmd, sizeof(retire_data_t));
-        // i believe this constructor modifies the address inherently to be 
-        // block aligned, we will have to make sure that doesn't ruin the address to the SU
-        //new_pkt->allocate();
-        //auto data = pkt->getPtr<runt_codelet_t>();
-        auto data = pkt->getPtr<retire_data_t>();
-        unsigned int size = new_pkt->getSize();
-        //assert(size == sizeof(runt_codelet_t));
-        //memcpy(data, toRetire, sizeof(runt_codelet_t));
-        new_pkt->setAddr(suRetAddr);
-        //new_pkt->dataDynamic<runt_codelet_t>(toRetire);
-        new_pkt->dataDynamic<retire_data_t>(toRetire);
-        codReqPort.sendPacket(new_pkt); //send new packet to SU
-        // do not send response here: the response will be handled when the MemcodInterface receives
-        // the response from the SU
-        return(true);
     }
     else {
         return(false);
@@ -626,6 +646,58 @@ void
 MemcodInterface::init()
 {
     codRespPort.sendRangeChange();
+}
+
+
+void
+MemcodInterface::tick()
+{
+    // add range checking here as well as pushing memcods to mcu threads
+}
+
+// checks if the memranges have any conflicts with the active memranges
+bool
+MemcodInterface::hasMemrangeConflict(memranges_pair_t *toCheck)
+{
+
+}
+
+// sends memory codelet to mcu threaad for execution. will need a scheduling algorithm (similar to SU)
+bool
+MemcodInterface::sendRequest(runt_memcod_t *toPush, Addr dest)
+{
+    if (reqBlocked) { //can't send if already being used
+        return false;
+    }
+    // request is not blocked, so now lets give the codelet a unique id and increment it
+    if (isMemCod) {
+        runt_memcod_t * toSend = reinterpret_cast<runt_memcod_t *>(toPush);
+        toSend->unid = codUniqueId;
+        codUniqueId++; // increment unique codelet id for next send
+        DPRINTF(SU, "Pushing codelet %s with unique id 0x%lx to interface with addr %#x\n", toSend->name, toSend->unid, dest);
+        reqBlocked = true;
+        // need to make a request object first to pass to the packet
+        // let's say the SU has requestor ID 55..... if not, make it invalid somehow
+        Request::Flags reqFlags(Request::UNCACHEABLE | Request::PHYSICAL);
+        const RequestPtr codReq = std::shared_ptr<Request>(new Request(dest, sizeof(runt_memcod_t), reqFlags, 55));
+        PacketPtr codPkt = Packet::createWrite(codReq);
+        codPkt->dataStatic<runt_memcod_t>(toSend);
+        codReqPort.sendPacket(codPkt);
+    } else {
+        runt_codelet_t * toSend = reinterpret_cast<runt_codelet_t *>(toPush);
+        toSend->unid = codUniqueId;
+        codUniqueId++; // increment unique codelet id for next send
+        DPRINTF(SU, "Pushing codelet %s with unique id 0x%lx to interface with addr %#x\n", toSend->name, toSend->unid, dest);
+        reqBlocked = true;
+        // need to make a request object first to pass to the packet
+        // let's say the SU has requestor ID 55..... if not, make it invalid somehow
+        Request::Flags reqFlags(Request::UNCACHEABLE | Request::PHYSICAL);
+        const RequestPtr codReq = std::shared_ptr<Request>(new Request(dest, sizeof(runt_codelet_t), reqFlags, 55));
+        PacketPtr codPkt = Packet::createWrite(codReq);
+        codPkt->dataStatic<runt_codelet_t>(toSend);
+        codReqPort.sendPacket(codPkt);
+    }
+    return(true);
 }
 
 AddrRangeList

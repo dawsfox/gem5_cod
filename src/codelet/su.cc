@@ -571,7 +571,6 @@ SU::CodSideReqPort::recvReqRetry()
 
 
 bool
-//SU::sendRequest(runt_codelet_t *toPush, Addr dest)
 SU::sendRequest(void *toPush, Addr dest, bool isMemCod)
 {
     if (reqBlocked) { //can't send if already being used
