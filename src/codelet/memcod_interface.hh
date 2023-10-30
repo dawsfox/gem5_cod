@@ -10,12 +10,30 @@
 #include "codelet/codelet.hh"
 #include <queue>
 
-typedef struct memcod_range_s
+struct memcod_range_t
 {
-  uint64_t start = 0;
-  uint64_t size = 0;
-  uint64_t unid = 0;
-} memcod_range_t;
+  uint64_t start;
+  uint32_t size;
+  uint64_t unid;
+
+  memcod_range_t() : start(0), size(0) {}
+  memcod_range_t(uint64_t start, uint32_t nsize) : start(start), size(nsize) {}
+  memcod_range_t(const memcod_range_t &other) : start(other.start), size(other.size) {}
+  uint64_t upperLimit() const { return(start + size); }
+  inline bool operator<(const memcod_range_t &other) const
+  {
+    return this->start < other.start;
+  }
+  inline bool operator==(const memcod_range_t &other) const
+  {
+    return (this->start == other.start && this->size == other.size);
+  }
+  inline bool operator!=(const memcod_range_t &other) const
+  {
+    return !(*this == other);
+  }
+};
+
 
 typedef struct memranges_pair_s 
 {
@@ -381,7 +399,7 @@ class MemcodInterface : public ClockedObject
 
     void init() override;
 
-    bool sendRequest(runt_memcod_t *toPush, Addr dest);
+    bool schedCodelet(void *toPush, Addr dest, bool isMemCod, uint64_t unid);
 
     bool hasMemrangeConflict(memranges_pair_t *toCheck);
 
@@ -412,7 +430,7 @@ class MemcodInterface : public ClockedObject
     // codRespPort used for receiving Codelets from SU
     CodSideRespPort codRespPort;
 
-    /// True if this cache is currently blocked waiting for a response.
+    /// True if this mci is currently blocked waiting for a response.
     bool blocked;
 
     /// Packet that we are currently handling. Used for upgrading to larger
